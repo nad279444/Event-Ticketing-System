@@ -1,0 +1,19 @@
+{
+  "name": "Order System - Node.js + RabbitMQ",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "api",
+  "workspaceFolder": "/app",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "ms-vscode.vscode-typescript-next",
+        "RabbitMQ.rabbitmq"
+      ]
+    }
+  },
+  "forwardPorts": [3000, 15672],
+  "postCreateCommand": "echo 'Dev container ready!'",
+  "remoteUser": "node"
+}

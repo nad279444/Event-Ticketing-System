@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Event Ticket Analytics Dashboard</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        padding: 20px;
+      }
+      .container {
+        max-width: 1400px;
+        margin: 0 auto;
+      }
+      h1 {
+        color: white;
+        text-align: center;
+        margin-bottom: 30px;
+        font-size: 2.5em;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+      }
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 20px;
+        margin-bottom: 30px;
+      }
+      .stat-card {
+        background: white;
+        padding: 25px;
+        border-radius: 15px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        transition: transform 0.3s;
+      }
+      .stat-card:hover {
+        transform: translateY(-5px);
+      }
+      .stat-label {
+        color: #666;
+        font-size: 0.9em;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+      .stat-value {
+        font-size: 2.5em;
+        font-weight: bold;
+        color: #667eea;
+        margin-top: 10px;
+      }
+      .events-container {
+        background: white;
+        padding: 30px;
+        border-radius: 15px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        margin-bottom: 30px;
+      }
+      .event-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 25px;
+        padding: 15px;
+        border-radius: 10px;
+        background: #f8f9fa;
+      }
+      .event-icon {
+        font-size: 2em;
+        margin-right: 15px;
+      }
+      .event-info {
+        flex: 1;
+      }
+      .event-name {
+        font-weight: bold;
+        text-transform: capitalize;
+        font-size: 1.2em;
+        margin-bottom: 5px;
+      }
+      .event-bar {
+        height: 25px;
+        background: #e0e0e0;
+        border-radius: 12px;
+        overflow: hidden;
+        position: relative;
+        margin-top: 10px;
+      }
+      .event-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #667eea, #764ba2);
+        transition: width 0.5s ease;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        padding-right: 10px;
+        color: white;
+        font-weight: bold;
+        font-size: 0.9em;
+      }
+      .event-revenue {
+        color: #28a745;
+        font-weight: bold;
+        margin-top: 5px;
+      }
+      .recent-orders {
+        background: white;
+        padding: 30px;
+        border-radius: 15px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+      }
+      .recent-orders h2 {
+        margin-bottom: 20px;
+        color: #333;
+      }
+      .order-item {
+        padding: 15px;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        justify-content: space-between;
+        animation: slideIn 0.3s ease;
+      }
+      @keyframes slideIn {
+        from {
+          opacity: 0;
+          transform: translateX(-20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
+      .order-event {
+        font-weight: bold;
+        color: #667eea;
+        text-transform: capitalize;
+      }
+      .order-quantity {
+        background: #667eea;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 0.85em;
+        margin-left: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🎟️ Live Event Ticket Analytics</h1>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Orders</div>
+          <div class="stat-value" id="totalOrders">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Tickets</div>
+          <div class="stat-value" id="totalTickets">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Revenue</div>
+          <div class="stat-value" id="totalRevenue" style="font-size: 2em">
+            $0
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Orders/Min</div>
+          <div class="stat-value" id="ordersPerMinute">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">System Uptime</div>
+          <div class="stat-value" id="uptime" style="font-size: 1.5em">
+            0m 0s
+          </div>
+        </div>
+      </div>
+
+      <div class="events-container">
+        <h2 style="margin-bottom: 20px; color: #333">📊 Event Popularity</h2>
+        <div id="eventStats"></div>
+      </div>
+
+      <div class="recent-orders">
+        <h2>🎫 Recent Ticket Orders</h2>
+        <div id="recentOrders"></div>
+      </div>
+    </div>
+
+    <script>
+      const eventIcons = {
+        movie: '🎬',
+        game: '🎮',
+        concert: '🎵',
+        sports: '🏆',
+      };
+
+      async function updateDashboard() {
+        try {
+          const response = await fetch('http://localhost:4000/stats');
+          const data = await response.json();
+
+          // Update summary stats
+          document.getElementById('totalOrders').textContent =
+            data.summary.totalOrders;
+          document.getElementById('totalTickets').textContent =
+            data.summary.totalTickets;
+          document.getElementById('totalRevenue').textContent =
+            data.summary.totalRevenue;
+          document.getElementById('ordersPerMinute').textContent =
+            data.summary.ordersPerMinute;
+          document.getElementById('uptime').textContent = data.summary.uptime;
+
+          // Update event stats
+          const eventStatsHtml = data.events
+            .map(
+              (event) => `
+          <div class="event-item">
+            <div class="event-icon">${eventIcons[event.event]}</div>
+            <div class="event-info">
+              <div class="event-name">${event.event}</div>
+              <div class="event-bar">
+                <div class="event-bar-fill" style="width: ${event.percentage}%">
+                  ${event.percentage}%
+                </div>
+              </div>
+              <div class="event-revenue">💰 ${event.revenue} | 🎟️ ${event.count} tickets</div>
+            </div>
+          </div>
+        `,
+            )
+            .join('');
+          document.getElementById('eventStats').innerHTML = eventStatsHtml;
+
+          // Update recent orders
+          const ordersHtml =
+            data.recentOrders
+              .map(
+                (order) => `
+          <div class="order-item">
+            <div>
+              ${eventIcons[order.event]}
+              <span class="order-event">${order.event}</span>
+              <span class="order-quantity">${order.quantity}x</span>
+              for ${order.customer}
+            </div>
+            <div style="color: #999; font-size: 0.9em;">
+              ${new Date(order.timestamp).toLocaleTimeString()}
+            </div>
+          </div>
+        `,
+              )
+              .join('') ||
+            '<div style="text-align: center; color: #999; padding: 20px;">No orders yet</div>';
+          document.getElementById('recentOrders').innerHTML = ordersHtml;
+        } catch (error) {
+          console.error('Error fetching stats:', error);
+        }
+      }
+
+      // Update every 2 seconds
+      updateDashboard();
+      setInterval(updateDashboard, 2000);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,24 @@
+{
+  "name": "order-api",
+  "version": "1.0.0",
+  "description": "Main entrypoint service - accepts orders via HTTP",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "dependencies": {
+    "fastify": "^5.0.0",
+    "@fastify/env": "^5.0.0",
+    "@fastify/cors": "^11.0.0",
+    "amqplib": "^0.10.4",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
