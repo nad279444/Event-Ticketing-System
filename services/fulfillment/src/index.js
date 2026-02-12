@@ -1,6 +1,29 @@
 // fulfillment-service/index.js
 import { connectRabbit } from '../../../shared/rabbit/index.js';
+import fastify from 'fastify';
 
+// Add HTTP server for Render's port requirement
+const app = fastify({ logger: true });
+const PORT = process.env.PORT || 10000;
+
+// Health check endpoint (required for Render)
+app.get('/', async (req, reply) => {
+  return {
+    status: 'healthy',
+    service: 'fulfillment',
+    message: 'Fulfillment service is running and processing orders',
+  };
+});
+
+app.get('/health', async (req, reply) => {
+  return { status: 'healthy' };
+});
+
+// Start HTTP server FIRST
+await app.listen({ port: PORT, host: '0.0.0.0' });
+console.log(`🚀 Fulfillment HTTP server running on port ${PORT}`);
+
+// Then start RabbitMQ consumer
 const { channel } = await connectRabbit();
 
 // Simulated processing times (in ms)
@@ -44,4 +67,4 @@ channel.consume('ticket-order', async (msg) => {
   channel.ack(msg);
 });
 
-console.log('🚀 Ticket Fulfillment Service started - Ready to process orders!');
+console.log('🎫 Ticket Fulfillment Service started - Ready to process orders!');
