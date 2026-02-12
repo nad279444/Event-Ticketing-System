@@ -10,7 +10,7 @@ const { channel } = await connectRabbit();
 await app.register(cors, {
   origin: '*',
 });
-
+const PORT = process.env.PORT || 4000;
 const eventStats = {
   movie: 0,
   game: 0,
@@ -109,8 +109,8 @@ app.get('/health', async (req, reply) => {
 });
 
 // Start API server
-await app.listen({ port: 4000, host: '0.0.0.0' });
-console.log('📈 Analytics API running on http://localhost:4000');
+await app.listen({ port: PORT, host: '0.0.0.0' });
+console.log(`📈 Analytics API running on port ${PORT}`);
 
 // Console logging
 setInterval(() => {
