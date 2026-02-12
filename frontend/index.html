@@ -202,7 +202,9 @@
 
       async function updateDashboard() {
         try {
-          const response = await fetch('http://localhost:4000/stats');
+          const response = await fetch(
+            'https://analytics-service-logz.onrender.com/stats',
+          );
           const data = await response.json();
 
           // Update summary stats
