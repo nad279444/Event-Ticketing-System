@@ -27,6 +27,127 @@
         font-size: 2.5em;
         text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
       }
+
+      /* Order Form Styles */
+      .order-form-container {
+        background: white;
+        padding: 30px;
+        border-radius: 15px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        margin-bottom: 30px;
+      }
+      .order-form-container h2 {
+        color: #333;
+        margin-bottom: 20px;
+      }
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin-bottom: 20px;
+      }
+      .form-group {
+        display: flex;
+        flex-direction: column;
+      }
+      .form-group label {
+        font-weight: bold;
+        color: #555;
+        margin-bottom: 8px;
+        font-size: 0.9em;
+      }
+      .form-group input,
+      .form-group select {
+        padding: 12px;
+        border: 2px solid #e0e0e0;
+        border-radius: 8px;
+        font-size: 1em;
+        transition: border-color 0.3s;
+      }
+      .form-group input:focus,
+      .form-group select:focus {
+        outline: none;
+        border-color: #667eea;
+      }
+      .order-button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        padding: 15px 40px;
+        font-size: 1.1em;
+        font-weight: bold;
+        border-radius: 8px;
+        cursor: pointer;
+        transition:
+          transform 0.2s,
+          box-shadow 0.2s;
+        width: 100%;
+      }
+      .order-button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+      }
+      .order-button:active {
+        transform: translateY(0);
+      }
+      .order-button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      /* Notification Popup Styles */
+      .notification {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: white;
+        padding: 20px 30px;
+        border-radius: 12px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        display: none;
+        animation: slideIn 0.3s ease;
+        z-index: 1000;
+        max-width: 400px;
+      }
+      .notification.show {
+        display: block;
+      }
+      .notification.success {
+        border-left: 5px solid #28a745;
+      }
+      .notification.error {
+        border-left: 5px solid #dc3545;
+      }
+      .notification-content {
+        display: flex;
+        align-items: start;
+        gap: 15px;
+      }
+      .notification-icon {
+        font-size: 2em;
+      }
+      .notification-text {
+        flex: 1;
+      }
+      .notification-title {
+        font-weight: bold;
+        margin-bottom: 5px;
+        color: #333;
+      }
+      .notification-message {
+        color: #666;
+        font-size: 0.9em;
+      }
+      .notification-close {
+        background: none;
+        border: none;
+        font-size: 1.5em;
+        color: #999;
+        cursor: pointer;
+        padding: 0;
+        line-height: 1;
+      }
+
       .stats-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -151,9 +272,65 @@
     </style>
   </head>
   <body>
+    <!-- Notification Popup -->
+    <div id="notification" class="notification">
+      <div class="notification-content">
+        <div class="notification-icon" id="notificationIcon">🎉</div>
+        <div class="notification-text">
+          <div class="notification-title" id="notificationTitle">Success!</div>
+          <div class="notification-message" id="notificationMessage"></div>
+        </div>
+        <button class="notification-close" onclick="hideNotification()">
+          ×
+        </button>
+      </div>
+    </div>
+
     <div class="container">
       <h1>🎟️ Live Event Ticket Analytics</h1>
 
+      <!-- Updated Order Form Section -->
+      <div class="order-form-container">
+        <h2>🎫 Order Tickets</h2>
+        <form id="orderForm" onsubmit="submitOrder(event)">
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="eventType">Event Type</label>
+              <select id="eventType" required>
+                <option value="">Select an event</option>
+                <!-- Events will be loaded dynamically -->
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="customerName">Your Name</label>
+              <input
+                type="text"
+                id="customerName"
+                placeholder="Enter your name"
+                required
+                minlength="2"
+              />
+            </div>
+            <div class="form-group">
+              <label for="quantity">Number of Tickets</label>
+              <input
+                type="number"
+                id="quantity"
+                placeholder="1"
+                required
+                min="1"
+                max="10"
+                value="1"
+              />
+            </div>
+          </div>
+          <button type="submit" class="order-button" id="orderButton">
+            🎟️ Place Order
+          </button>
+        </form>
+      </div>
+
+      <!-- Stats Section -->
       <div class="stats-grid">
         <div class="stat-card">
           <div class="stat-label">Total Orders</div>
@@ -181,11 +358,13 @@
         </div>
       </div>
 
+      <!-- Events Section -->
       <div class="events-container">
         <h2 style="margin-bottom: 20px; color: #333">📊 Event Popularity</h2>
         <div id="eventStats"></div>
       </div>
 
+      <!-- Recent Orders Section -->
       <div class="recent-orders">
         <h2>🎫 Recent Ticket Orders</h2>
         <div id="recentOrders"></div>
@@ -193,6 +372,9 @@
     </div>
 
     <script>
+      const API_URL = 'https://api-service-onri.onrender.com';
+      const ANALYTICS_URL = 'https://analytics-service-logz.onrender.com';
+
       const eventIcons = {
         movie: '🎬',
         game: '🎮',
@@ -200,14 +382,112 @@
         sports: '🏆',
       };
 
-      async function updateDashboard() {
+      // Load available events on page load
+      async function loadEventTypes() {
         try {
-          const response = await fetch(
-            'https://analytics-service-logz.onrender.com/stats',
-          );
+          const response = await fetch(`${API_URL}/events`);
           const data = await response.json();
 
-          // Update summary stats
+          const select = document.getElementById('eventType');
+
+          // Clear existing options except the first one
+          select.innerHTML = '<option value="">Select an event</option>';
+
+          // Add event options dynamically
+          data.events.forEach((event) => {
+            const option = document.createElement('option');
+            option.value = event;
+            option.textContent = `${eventIcons[event] || '🎟️'} ${event.charAt(0).toUpperCase() + event.slice(1)}`;
+            select.appendChild(option);
+          });
+        } catch (error) {
+          console.error('Error loading events:', error);
+          // Fallback to hardcoded events
+          const select = document.getElementById('eventType');
+          select.innerHTML = `
+            <option value="">Select an event</option>
+            <option value="movie">🎬 Movie</option>
+            <option value="game">🎮 Game</option>
+            <option value="concert">🎵 Concert</option>
+            <option value="sports">🏆 Sports</option>
+          `;
+        }
+      }
+
+      // Submit Order Function (same as before)
+      async function submitOrder(event) {
+        event.preventDefault();
+
+        const button = document.getElementById('orderButton');
+        const eventType = document.getElementById('eventType').value;
+        const customerName = document.getElementById('customerName').value;
+        const quantity = parseInt(document.getElementById('quantity').value);
+
+        button.disabled = true;
+        button.textContent = '⏳ Processing...';
+
+        try {
+          const response = await fetch(`${API_URL}/order`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              event: eventType,
+              customer: customerName,
+              quantity: quantity,
+            }),
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            showNotification(
+              'success',
+              '🎉 Order Placed!',
+              `Order #${data.orderId}: ${quantity}x ${eventType} tickets for ${customerName}. ${data.message}`,
+            );
+            document.getElementById('orderForm').reset();
+            updateDashboard();
+          } else {
+            throw new Error(data.error || 'Failed to place order');
+          }
+        } catch (error) {
+          console.error('Order error:', error);
+          showNotification(
+            'error',
+            '❌ Order Failed',
+            `Could not place order: ${error.message}`,
+          );
+        } finally {
+          button.disabled = false;
+          button.textContent = '🎟️ Place Order';
+        }
+      }
+
+      function showNotification(type, title, message) {
+        const notification = document.getElementById('notification');
+        const icon = document.getElementById('notificationIcon');
+        const titleEl = document.getElementById('notificationTitle');
+        const messageEl = document.getElementById('notificationMessage');
+
+        notification.className = `notification ${type} show`;
+        icon.textContent = type === 'success' ? '🎉' : '❌';
+        titleEl.textContent = title;
+        messageEl.textContent = message;
+
+        setTimeout(hideNotification, 5000);
+      }
+
+      function hideNotification() {
+        document.getElementById('notification').classList.remove('show');
+      }
+
+      async function updateDashboard() {
+        try {
+          const response = await fetch(`${ANALYTICS_URL}/stats`);
+          const data = await response.json();
+
           document.getElementById('totalOrders').textContent =
             data.summary.totalOrders;
           document.getElementById('totalTickets').textContent =
@@ -218,10 +498,10 @@
             data.summary.ordersPerMinute;
           document.getElementById('uptime').textContent = data.summary.uptime;
 
-          // Update event stats
-          const eventStatsHtml = data.events
-            .map(
-              (event) => `
+          const eventStatsHtml =
+            data.events
+              .map(
+                (event) => `
           <div class="event-item">
             <div class="event-icon">${eventIcons[event.event]}</div>
             <div class="event-info">
@@ -235,11 +515,11 @@
             </div>
           </div>
         `,
-            )
-            .join('');
+              )
+              .join('') ||
+            '<div style="text-align: center; color: #999; padding: 20px;">No data yet</div>';
           document.getElementById('eventStats').innerHTML = eventStatsHtml;
 
-          // Update recent orders
           const ordersHtml =
             data.recentOrders
               .map(
@@ -265,9 +545,10 @@
         }
       }
 
-      // Update every 2 seconds
+      // Initialize
+      loadEventTypes(); // Load events first
       updateDashboard();
-      setInterval(updateDashboard, 2000);
+      setInterval(updateDashboard, 3000);
     </script>
   </body>
 </html>
