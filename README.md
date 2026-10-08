@@ -10,7 +10,7 @@ analytics service backed by **Postgres**.
 ```
                     ┌──────────────────┐
                     │  Dashboard       │  frontend/index.html
-                    │  (polls /stats)  │
+                    │  (live via SSE)  │
                     └───────┬──────────┘
                             │ HTTP
                             ▼
@@ -36,8 +36,9 @@ analytics service backed by **Postgres**.
 Message flow: `POST /order` → API inserts a `pending` row and publishes to
 `order-events` → Pub/Sub push-delivers to the fulfillment service, which
 simulates processing (2–4s) and publishes to `analytics-events` → Pub/Sub
-push-delivers to analytics, which marks the order `fulfilled` → the dashboard
-polls `GET /stats`, which aggregates straight from Postgres.
+push-delivers to analytics, which marks the order `fulfilled` and pushes fresh
+stats to every connected dashboard over SSE (`GET /stats/stream`), aggregated
+straight from Postgres.
 
 ## Tech Stack
 
@@ -182,6 +183,9 @@ After the first deploy, update the production URLs in
   push subscription (with an OIDC token) can invoke it.
 - Fulfillment processing (≤4s) happens inside the push request, so keep the
   subscription ack deadline at 30s (set by `gcp-subscriptions.sh`).
+- SSE: the analytics service is deployed with `--timeout=3600` because Cloud
+  Run's default 60s request timeout would cut idle event streams. The frontend
+  falls back to 3s polling if the stream cannot be established.
 - Scaling: Cloud Run scales each service independently and to zero; all state
   lives in Postgres, so this is safe.
 
@@ -203,6 +207,7 @@ After the first deploy, update the production URLs in
 | Method | Path | Description |
 | ------ | ---- | ----------- |
 | GET | `/stats` | Summary, per-event breakdown, recent orders |
+| GET | `/stats/stream` | SSE stream: snapshot on connect, then a push per fulfilled order |
 | GET | `/events/:eventType` | Stats for one event type |
 | GET | `/health` | Health check |
 

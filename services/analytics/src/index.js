@@ -65,6 +65,9 @@ async function handlePush(req, reply) {
   try {
     await recordFulfillment(order);
     reply.send({ ok: true });
+    broadcastStats().catch((error) =>
+      console.error('SSE broadcast failed:', error.message),
+    );
   } catch (error) {
     console.error('❌ Error recording fulfillment:', error);
     reply.code(500).send({ error: 'Recording failed' });
@@ -74,7 +77,7 @@ async function handlePush(req, reply) {
 app.post('/', handlePush);
 app.post('/push', handlePush);
 
-app.get('/stats', async (req, reply) => {
+async function computeStats() {
   const [summaryResult, eventsResult, recentResult] = await Promise.all([
     pool.query(
       `SELECT COUNT(*)::int AS total_orders,
@@ -139,6 +142,67 @@ app.get('/stats', async (req, reply) => {
     }).sort((a, b) => b.count - a.count),
     recentOrders: recentResult.rows,
   };
+}
+
+app.get('/stats', async (req, reply) => {
+  return computeStats();
+});
+
+// ====== SSE: live stats stream ======
+// Connected dashboards get a snapshot on connect and an update pushed
+// every time an order is fulfilled.
+const sseClients = new Set();
+const HEARTBEAT_MS = 15000;
+
+function sendEvent(res, name, data) {
+  if (res.destroyed || res.writableEnded) return false;
+  res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
+  return true;
+}
+
+async function broadcastStats() {
+  if (sseClients.size === 0) return;
+  const stats = await computeStats();
+  for (const res of [...sseClients]) {
+    if (!sendEvent(res, 'stats', stats)) {
+      sseClients.delete(res);
+    }
+  }
+}
+
+app.get('/stats/stream', async (req, reply) => {
+  reply.hijack();
+  const res = reply.raw;
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'Access-Control-Allow-Origin': req.headers.origin || '*',
+    'X-Accel-Buffering': 'no',
+  });
+
+  try {
+    sendEvent(res, 'stats', await computeStats());
+  } catch (error) {
+    console.error('SSE initial snapshot failed:', error.message);
+    res.end();
+    return;
+  }
+
+  sseClients.add(res);
+  console.log(`🔊 SSE client connected (${sseClients.size} total)`);
+
+  const heartbeat = setInterval(() => {
+    if (res.destroyed || res.writableEnded) return;
+    res.write(': keepalive\n\n');
+  }, HEARTBEAT_MS);
+
+  req.raw.on('close', () => {
+    clearInterval(heartbeat);
+    sseClients.delete(res);
+    console.log(`🔇 SSE client disconnected (${sseClients.size} total)`);
+  });
 });
 
 app.get('/events/:eventType', async (req, reply) => {

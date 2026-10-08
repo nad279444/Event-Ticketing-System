@@ -87,6 +87,7 @@ jobs:
           flags: |
             --service-account=analytics-runtime@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
             --allow-unauthenticated
+            --timeout=3600
             --set-env-vars=PROJECT_ID=${{ env.PROJECT_ID }}
             --set-secrets=DATABASE_URL=DATABASE_URL:latest
 

@@ -498,25 +498,21 @@
         document.getElementById('notification').classList.remove('show');
       }
 
-      async function updateDashboard() {
-        try {
-          const response = await fetch(`${ANALYTICS_URL}/stats`);
-          const data = await response.json();
+      function renderStats(data) {
+        document.getElementById('totalOrders').textContent =
+          data.summary.totalOrders;
+        document.getElementById('totalTickets').textContent =
+          data.summary.totalTickets;
+        document.getElementById('totalRevenue').textContent =
+          data.summary.totalRevenue;
+        document.getElementById('ordersPerMinute').textContent =
+          data.summary.ordersPerMinute;
+        document.getElementById('uptime').textContent = data.summary.uptime;
 
-          document.getElementById('totalOrders').textContent =
-            data.summary.totalOrders;
-          document.getElementById('totalTickets').textContent =
-            data.summary.totalTickets;
-          document.getElementById('totalRevenue').textContent =
-            data.summary.totalRevenue;
-          document.getElementById('ordersPerMinute').textContent =
-            data.summary.ordersPerMinute;
-          document.getElementById('uptime').textContent = data.summary.uptime;
-
-          const eventStatsHtml =
-            data.events
-              .map(
-                (event) => `
+        const eventStatsHtml =
+          data.events
+            .map(
+              (event) => `
           <div class="event-item">
             <div class="event-icon">${eventIcons[event.event]}</div>
             <div class="event-info">
@@ -530,15 +526,15 @@
             </div>
           </div>
         `,
-              )
-              .join('') ||
-            '<div style="text-align: center; color: #999; padding: 20px;">No data yet</div>';
-          document.getElementById('eventStats').innerHTML = eventStatsHtml;
+            )
+            .join('') ||
+          '<div style="text-align: center; color: #999; padding: 20px;">No data yet</div>';
+        document.getElementById('eventStats').innerHTML = eventStatsHtml;
 
-          const ordersHtml =
-            data.recentOrders
-              .map(
-                (order) => `
+        const ordersHtml =
+          data.recentOrders
+            .map(
+              (order) => `
           <div class="order-item">
             <div>
               ${eventIcons[order.event]}
@@ -551,19 +547,57 @@
             </div>
           </div>
         `,
-              )
-              .join('') ||
-            '<div style="text-align: center; color: #999; padding: 20px;">No orders yet</div>';
-          document.getElementById('recentOrders').innerHTML = ordersHtml;
+            )
+            .join('') ||
+          '<div style="text-align: center; color: #999; padding: 20px;">No orders yet</div>';
+        document.getElementById('recentOrders').innerHTML = ordersHtml;
+      }
+
+      async function updateDashboard() {
+        try {
+          const response = await fetch(`${ANALYTICS_URL}/stats`);
+          const data = await response.json();
+          renderStats(data);
         } catch (error) {
           console.error('Error fetching stats:', error);
         }
       }
 
+      // Live updates via SSE; the server pushes a snapshot on connect and
+      // fresh stats every time an order is fulfilled. Falls back to polling
+      // if EventSource is unavailable or the stream cannot be established.
+      function startStatsStream() {
+        if (typeof EventSource === 'undefined') {
+          updateDashboard();
+          setInterval(updateDashboard, 3000);
+          return;
+        }
+
+        const source = new EventSource(`${ANALYTICS_URL}/stats/stream`);
+
+        source.addEventListener('stats', (event) => {
+          try {
+            renderStats(JSON.parse(event.data));
+          } catch (error) {
+            console.error('Error parsing stats stream:', error);
+          }
+        });
+
+        source.onerror = () => {
+          // EventSource reconnects automatically on transient errors.
+          // If the connection is permanently closed, fall back to polling.
+          if (source.readyState === EventSource.CLOSED) {
+            source.close();
+            updateDashboard();
+            setInterval(updateDashboard, 3000);
+          }
+        };
+      }
+
       // Initialize
       loadEventTypes(); // Load events first
-      updateDashboard();
-      setInterval(updateDashboard, 3000);
+      updateDashboard(); // First paint immediately
+      startStatsStream(); // Then stay live over SSE
     </script>
   </body>
 </html>
