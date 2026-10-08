@@ -53,6 +53,7 @@ bind "serviceAccount:github-deployer@${PROJECT_ID}.iam.gserviceaccount.com" "rol
 bind "serviceAccount:github-deployer@${PROJECT_ID}.iam.gserviceaccount.com" "roles/iam.serviceAccountUser"
 bind "serviceAccount:github-deployer@${PROJECT_ID}.iam.gserviceaccount.com" "roles/artifactregistry.writer"
 bind "serviceAccount:github-deployer@${PROJECT_ID}.iam.gserviceaccount.com" "roles/secretmanager.secretAccessor"
+bind "serviceAccount:github-deployer@${PROJECT_ID}.iam.gserviceaccount.com" "roles/pubsub.editor"
 
 # Runtime service accounts
 bind "serviceAccount:api-runtime@${PROJECT_ID}.iam.gserviceaccount.com" "roles/pubsub.publisher"
