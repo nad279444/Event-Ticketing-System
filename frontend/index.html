@@ -1,1435 +1,1530 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0a0a0c" />
-    <meta
-      name="description"
-      content="Real-time event ticket revenue console. Orders stream through Pub/Sub and land here in seconds."
-    />
-    <title>Ticketing OS — Live Event Revenue</title>
-    <link
-      rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0a0c'/%3E%3Cpath d='M8 11h16v4a2.2 2.2 0 0 0 0 4.4V21H8v-1.6a2.2 2.2 0 0 0 0-4.4V11z' fill='none' stroke='%23f4f4f5' stroke-width='1.7'/%3E%3Cpath d='M16 12.6v1.6m0 2.4v1.6m0 2.4v1.6' stroke='%23f4f4f5' stroke-width='1.4'/%3E%3C/svg%3E"
-    />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap"
-      rel="stylesheet"
-    />
-    <style>
-      :root {
-        --bg: #0a0a0c;
-        --panel: #101014;
-        --panel-2: #15151a;
-        --line: #232329;
-        --line-soft: #1a1a20;
-        --text: #f4f4f5;
-        --muted: #93939c;
-        --faint: #5c5c66;
-        --ok: #4ade80;
-        --warn: #fbbf24;
-        --err: #f87171;
-        --sans: 'Inter', -apple-system, 'Segoe UI', sans-serif;
-        --serif: 'Instrument Serif', Georgia, serif;
-        --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
-        --ease: cubic-bezier(0.22, 1, 0.36, 1);
-      }
-
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-
-      html {
-        scroll-behavior: smooth;
-      }
-
-      body {
-        font-family: var(--sans);
-        background: var(--bg);
-        color: var(--text);
-        min-height: 100vh;
-        font-size: 15px;
-        line-height: 1.5;
-        -webkit-font-smoothing: antialiased;
-        text-rendering: optimizeLegibility;
-      }
-
-      body::before {
-        content: '';
-        position: fixed;
-        inset: 0;
-        pointer-events: none;
-        background:
-          radial-gradient(700px 340px at 12% -6%, rgba(255, 255, 255, 0.05), transparent 70%),
-          radial-gradient(500px 300px at 90% 0%, rgba(120, 130, 255, 0.05), transparent 70%);
-        z-index: 0;
-      }
-
-      ::selection {
-        background: #e4e4e7;
-        color: #0a0a0c;
-      }
-
-      ::-webkit-scrollbar {
-        width: 10px;
-        height: 10px;
-      }
-      ::-webkit-scrollbar-track {
-        background: var(--bg);
-      }
-      ::-webkit-scrollbar-thumb {
-        background: #26262d;
-        border-radius: 6px;
-        border: 2px solid var(--bg);
-      }
-
-      .mono {
-        font-family: var(--mono);
-      }
-
-      button {
-        font-family: inherit;
-      }
-
-      :focus-visible {
-        outline: 2px solid #e4e4e7;
-        outline-offset: 2px;
-      }
-
-      /* ============ Top bar ============ */
-      .topbar {
-        position: sticky;
-        top: 0;
-        z-index: 50;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        height: 60px;
-        padding: 0 clamp(16px, 4vw, 48px);
-        background: rgba(10, 10, 12, 0.75);
-        backdrop-filter: blur(14px);
-        -webkit-backdrop-filter: blur(14px);
-        border-bottom: 1px solid var(--line-soft);
-      }
-
-      .brand {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        text-decoration: none;
-        color: var(--text);
-      }
-
-      .brand svg {
-        display: block;
-      }
-
-      .brand-name {
-        font-family: var(--mono);
-        font-size: 13px;
-        font-weight: 500;
-        letter-spacing: 0.14em;
-      }
-
-      .brand-dim {
-        color: var(--faint);
-      }
-
-      .topbar-right {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-
-      .status {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 6px 12px;
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        background: var(--panel);
-      }
-
-      .status-dot {
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
-        background: var(--warn);
-        flex-shrink: 0;
-      }
-
-      .status[data-state='live'] .status-dot {
-        background: var(--ok);
-        animation: pulse 2s ease-out infinite;
-      }
-
-      .status[data-state='reconnecting'] .status-dot {
-        background: var(--warn);
-        animation: pulse 1.2s ease-out infinite;
-      }
-
-      .status[data-state='polling'] .status-dot {
-        background: var(--muted);
-      }
-
-      .status-label {
-        font-family: var(--mono);
-        font-size: 10.5px;
-        font-weight: 500;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        color: var(--muted);
-        white-space: nowrap;
-      }
-
-      .region-chip {
-        font-family: var(--mono);
-        font-size: 10.5px;
-        letter-spacing: 0.1em;
-        color: var(--faint);
-        padding: 6px 12px;
-        border: 1px solid var(--line-soft);
-        border-radius: 999px;
-        white-space: nowrap;
-      }
-
-      /* ============ Layout ============ */
-      main {
-        position: relative;
-        z-index: 1;
-        max-width: 1160px;
-        margin: 0 auto;
-        padding: 0 clamp(16px, 4vw, 48px) 80px;
-      }
-
-      .hero {
-        padding: clamp(48px, 8vw, 96px) 0 clamp(32px, 5vw, 56px);
-      }
-
-      .eyebrow {
-        font-family: var(--mono);
-        font-size: 11px;
-        letter-spacing: 0.2em;
-        text-transform: uppercase;
-        color: var(--faint);
-        margin-bottom: 22px;
-        animation: rise 0.7s var(--ease) both;
-      }
-
-      .hero h1 {
-        font-family: var(--serif);
-        font-weight: 400;
-        font-size: clamp(44px, 7.5vw, 84px);
-        line-height: 1.0;
-        letter-spacing: -0.015em;
-        max-width: 14ch;
-        animation: rise 0.7s var(--ease) 0.07s both;
-      }
-
-      .hero h1 em {
-        font-style: italic;
-        color: #c9c9d1;
-      }
-
-      .lede {
-        margin-top: 24px;
-        max-width: 560px;
-        color: var(--muted);
-        font-size: 16px;
-        line-height: 1.65;
-        animation: rise 0.7s var(--ease) 0.14s both;
-      }
-
-      .hero-meta {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 24px;
-        margin-top: 30px;
-        animation: rise 0.7s var(--ease) 0.21s both;
-      }
-
-      .hero-meta-item {
-        font-family: var(--mono);
-        font-size: 11px;
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
-        color: var(--faint);
-      }
-
-      .hero-meta-item span {
-        color: var(--muted);
-      }
-
-      /* ============ KPI strip ============ */
-      .kpis {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-        gap: 12px;
-        margin-bottom: 16px;
-      }
-
-      .kpi {
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        padding: 20px;
-        transition:
-          transform 0.35s var(--ease),
-          border-color 0.35s var(--ease);
-        animation: rise 0.6s var(--ease) both;
-      }
-
-      .kpi:nth-child(1) { animation-delay: 0.1s; }
-      .kpi:nth-child(2) { animation-delay: 0.16s; }
-      .kpi:nth-child(3) { animation-delay: 0.22s; }
-      .kpi:nth-child(4) { animation-delay: 0.28s; }
-      .kpi:nth-child(5) { animation-delay: 0.34s; }
-
-      .kpi:hover {
-        transform: translateY(-3px);
-        border-color: #303038;
-      }
-
-      .kpi-label {
-        font-family: var(--mono);
-        font-size: 10px;
-        letter-spacing: 0.16em;
-        text-transform: uppercase;
-        color: var(--faint);
-      }
-
-      .kpi-value {
-        margin-top: 12px;
-        font-size: clamp(26px, 2.6vw, 34px);
-        font-weight: 600;
-        letter-spacing: -0.02em;
-        font-variant-numeric: tabular-nums;
-        line-height: 1.1;
-      }
-
-      .kpi-sub {
-        margin-top: 6px;
-        font-size: 12px;
-        color: var(--faint);
-      }
-
-      /* ============ Cards ============ */
-      .split {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-        margin-bottom: 16px;
-      }
-
-      .card {
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: 16px;
-        padding: clamp(20px, 3vw, 28px);
-        animation: rise 0.65s var(--ease) 0.3s both;
-      }
-
-      .card-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        margin-bottom: 24px;
-      }
-
-      .card-title {
-        font-size: 15px;
-        font-weight: 600;
-        letter-spacing: -0.01em;
-      }
-
-      .chip {
-        font-family: var(--mono);
-        font-size: 9.5px;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-        color: var(--faint);
-        border: 1px solid var(--line);
-        padding: 4px 8px;
-        border-radius: 6px;
-        white-space: nowrap;
-      }
-
-      /* ============ Form ============ */
-      .field {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        margin-bottom: 18px;
-      }
-
-      .field-label {
-        font-family: var(--mono);
-        font-size: 10px;
-        letter-spacing: 0.16em;
-        text-transform: uppercase;
-        color: var(--faint);
-      }
-
-      .field-row {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 14px;
-      }
-
-      .input,
-      .select {
-        height: 46px;
-        background: var(--panel-2);
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        color: var(--text);
-        font-family: var(--sans);
-        font-size: 14.5px;
-        padding: 0 14px;
-        width: 100%;
-        transition:
-          border-color 0.2s,
-          box-shadow 0.2s;
-      }
-
-      .input::placeholder {
-        color: var(--faint);
-      }
-
-      .input:focus,
-      .select:focus {
-        outline: none;
-        border-color: #3d3d46;
-        box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.06);
-      }
-
-      .select {
-        appearance: none;
-        -webkit-appearance: none;
-        cursor: pointer;
-        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%2393939c' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
-        background-repeat: no-repeat;
-        background-position: right 14px center;
-        padding-right: 38px;
-      }
-
-      .stepper {
-        display: flex;
-        align-items: stretch;
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        background: var(--panel-2);
-        overflow: hidden;
-        height: 46px;
-      }
-
-      .stepper button {
-        width: 44px;
-        background: transparent;
-        border: none;
-        color: var(--muted);
-        font-size: 17px;
-        cursor: pointer;
-        transition:
-          background 0.2s,
-          color 0.2s;
-      }
-
-      .stepper button:hover {
-        background: rgba(255, 255, 255, 0.05);
-        color: var(--text);
-      }
-
-      .stepper input {
-        width: 54px;
-        background: transparent;
-        border: none;
-        border-left: 1px solid var(--line);
-        border-right: 1px solid var(--line);
-        color: var(--text);
-        font-family: var(--mono);
-        font-size: 15px;
-        text-align: center;
-        -moz-appearance: textfield;
-        appearance: textfield;
-      }
-
-      .stepper input::-webkit-outer-spin-button,
-      .stepper input::-webkit-inner-spin-button {
-        -webkit-appearance: none;
-        margin: 0;
-      }
-
-      .stepper input:focus {
-        outline: none;
-      }
-
-      .submit-btn {
-        width: 100%;
-        height: 50px;
-        margin-top: 4px;
-        background: var(--text);
-        color: var(--bg);
-        border: none;
-        border-radius: 10px;
-        font-size: 14px;
-        font-weight: 600;
-        letter-spacing: 0.01em;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 10px;
-        transition:
-          transform 0.25s var(--ease),
-          background 0.2s,
-          opacity 0.2s;
-      }
-
-      .submit-btn:hover:not(:disabled) {
-        background: #ffffff;
-        transform: translateY(-1px);
-      }
-
-      .submit-btn:active:not(:disabled) {
-        transform: translateY(0);
-      }
-
-      .submit-btn:disabled {
-        opacity: 0.55;
-        cursor: not-allowed;
-      }
-
-      .spinner {
-        width: 14px;
-        height: 14px;
-        border: 2px solid rgba(10, 10, 12, 0.25);
-        border-top-color: var(--bg);
-        border-radius: 50%;
-        animation: spin 0.7s linear infinite;
-      }
-
-      .form-footnote {
-        margin-top: 14px;
-        font-family: var(--mono);
-        font-size: 10.5px;
-        letter-spacing: 0.06em;
-        color: var(--faint);
-        text-align: center;
-      }
-
-      /* ============ Demand bars ============ */
-      .event-row {
-        padding: 15px 0;
-        border-top: 1px solid var(--line-soft);
-      }
-
-      .event-row:first-child {
-        border-top: none;
-        padding-top: 2px;
-      }
-
-      .event-head {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-
-      .badge {
-        font-family: var(--mono);
-        font-size: 10px;
-        font-weight: 500;
-        letter-spacing: 0.08em;
-        color: var(--muted);
-        border: 1px solid var(--line);
-        background: var(--panel-2);
-        border-radius: 6px;
-        padding: 3px 7px;
-        flex-shrink: 0;
-      }
-
-      .event-name {
-        font-size: 13.5px;
-        font-weight: 500;
-        text-transform: capitalize;
-      }
-
-      .event-pct {
-        margin-left: auto;
-        font-family: var(--mono);
-        font-size: 13px;
-        font-variant-numeric: tabular-nums;
-        color: var(--text);
-      }
-
-      .event-bar {
-        height: 6px;
-        background: #1c1c22;
-        border-radius: 999px;
-        overflow: hidden;
-        margin-top: 11px;
-      }
-
-      .event-bar-fill {
-        height: 100%;
-        border-radius: 999px;
-        background: linear-gradient(90deg, #a1a1aa, #f4f4f5);
-        width: 0;
-        transition: width 0.7s var(--ease);
-      }
-
-      .event-meta {
-        display: flex;
-        gap: 18px;
-        margin-top: 9px;
-        font-family: var(--mono);
-        font-size: 11px;
-        color: var(--faint);
-        font-variant-numeric: tabular-nums;
-      }
-
-      .empty-state {
-        border: 1px dashed var(--line);
-        border-radius: 10px;
-        padding: 32px 20px;
-        text-align: center;
-        color: var(--faint);
-        font-size: 13.5px;
-      }
-
-      /* ============ Orders table ============ */
-      .table-wrap {
-        overflow-x: auto;
-        margin: 0 -4px;
-      }
-
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        min-width: 560px;
-      }
-
-      th {
-        font-family: var(--mono);
-        font-size: 9.5px;
-        font-weight: 500;
-        letter-spacing: 0.16em;
-        text-transform: uppercase;
-        color: var(--faint);
-        text-align: left;
-        padding: 10px 12px;
-        border-bottom: 1px solid var(--line);
-      }
-
-      td {
-        padding: 13px 12px;
-        font-size: 14px;
-        border-bottom: 1px solid var(--line-soft);
-        vertical-align: middle;
-      }
-
-      tbody tr {
-        transition: background 0.2s;
-        animation: rowIn 0.45s var(--ease) both;
-      }
-
-      tbody tr:hover {
-        background: rgba(255, 255, 255, 0.02);
-      }
-
-      tbody tr:last-child td {
-        border-bottom: none;
-      }
-
-      .cell-order {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        white-space: nowrap;
-      }
-
-      .oid {
-        font-family: var(--mono);
-        font-size: 12px;
-        color: var(--faint);
-        font-variant-numeric: tabular-nums;
-      }
-
-      .cell-qty {
-        font-family: var(--mono);
-        font-size: 13px;
-        font-variant-numeric: tabular-nums;
-      }
-
-      .cell-time {
-        font-family: var(--mono);
-        font-size: 12px;
-        color: var(--faint);
-        white-space: nowrap;
-      }
-
-      .pill {
-        display: inline-flex;
-        align-items: center;
-        gap: 7px;
-        font-family: var(--mono);
-        font-size: 10px;
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
-        padding: 4px 9px;
-        border-radius: 999px;
-        border: 1px solid var(--line);
-        color: var(--muted);
-        white-space: nowrap;
-      }
-
-      .pill::before {
-        content: '';
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        background: currentColor;
-      }
-
-      .pill[data-status='fulfilled'] {
-        color: var(--ok);
-        border-color: rgba(74, 222, 128, 0.25);
-        background: rgba(74, 222, 128, 0.06);
-      }
-
-      .pill[data-status='pending'] {
-        color: var(--warn);
-        border-color: rgba(251, 191, 36, 0.25);
-        background: rgba(251, 191, 36, 0.06);
-      }
-
-      /* ============ Toast ============ */
-      .toast {
-        position: fixed;
-        bottom: 24px;
-        right: 24px;
-        z-index: 100;
-        width: min(380px, calc(100vw - 32px));
-        background: var(--panel-2);
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        padding: 16px;
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
-        display: flex;
-        gap: 13px;
-        opacity: 0;
-        transform: translateY(14px);
-        pointer-events: none;
-        transition:
-          opacity 0.35s var(--ease),
-          transform 0.35s var(--ease);
-        overflow: hidden;
-      }
-
-      .toast.show {
-        opacity: 1;
-        transform: translateY(0);
-        pointer-events: auto;
-      }
-
-      .toast-icon {
-        width: 30px;
-        height: 30px;
-        border-radius: 50%;
-        flex-shrink: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-
-      .toast[data-type='success'] .toast-icon {
-        background: rgba(74, 222, 128, 0.12);
-        color: var(--ok);
-      }
-
-      .toast[data-type='error'] .toast-icon {
-        background: rgba(248, 113, 113, 0.12);
-        color: var(--err);
-      }
-
-      .toast-body {
-        flex: 1;
-        min-width: 0;
-      }
-
-      .toast-title {
-        font-size: 13.5px;
-        font-weight: 600;
-        margin-bottom: 3px;
-      }
-
-      .toast-message {
-        font-size: 13px;
-        color: var(--muted);
-        line-height: 1.5;
-      }
-
-      .toast-close {
-        background: none;
-        border: none;
-        color: var(--faint);
-        font-size: 18px;
-        line-height: 1;
-        cursor: pointer;
-        padding: 0;
-        height: 20px;
-        transition: color 0.2s;
-      }
-
-      .toast-close:hover {
-        color: var(--text);
-      }
-
-      .toast-progress {
-        position: absolute;
-        bottom: 0;
-        left: 0;
-        height: 2px;
-        width: 100%;
-        background: var(--text);
-        opacity: 0.25;
-        transform-origin: left;
-        transform: scaleX(0);
-      }
-
-      .toast.show .toast-progress {
-        animation: shrink 5s linear forwards;
-      }
-
-      /* ============ Footer ============ */
-      footer {
-        position: relative;
-        z-index: 1;
-        border-top: 1px solid var(--line-soft);
-        padding: 26px clamp(16px, 4vw, 48px);
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        justify-content: space-between;
-        gap: 14px;
-      }
-
-      .pipeline {
-        font-family: var(--mono);
-        font-size: 10.5px;
-        letter-spacing: 0.08em;
-        color: var(--faint);
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        align-items: center;
-      }
-
-      .pipeline .node {
-        color: var(--muted);
-      }
-
-      .pipeline .arrow {
-        color: #33333b;
-      }
-
-      .footer-note {
-        font-family: var(--mono);
-        font-size: 10.5px;
-        letter-spacing: 0.08em;
-        color: var(--faint);
-      }
-
-      /* ============ Animations ============ */
-      @keyframes rise {
-        from {
-          opacity: 0;
-          transform: translateY(18px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
-      }
-
-      @keyframes rowIn {
-        from {
-          opacity: 0;
-          transform: translateY(-6px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
-      }
-
-      @keyframes pulse {
-        0% {
-          box-shadow: 0 0 0 0 currentColor;
-          opacity: 1;
-        }
-        100% {
-          box-shadow: 0 0 0 7px transparent;
-          opacity: 0.85;
-        }
-      }
-
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
-
-      @keyframes shrink {
-        to {
-          transform: scaleX(0);
-        }
-      }
-
-      /* ============ Responsive ============ */
-      @media (max-width: 960px) {
-        .split {
-          grid-template-columns: 1fr;
-        }
-      }
-
-      @media (max-width: 640px) {
-        .region-chip {
-          display: none;
-        }
-        .hero h1 {
-          max-width: none;
-        }
-        .field-row {
-          grid-template-columns: 1fr;
-        }
-        .stepper {
-          width: 100%;
-        }
-        .stepper input {
-          flex: 1;
-        }
-        footer {
-          flex-direction: column;
-          align-items: flex-start;
-        }
-      }
-
-      @media (prefers-reduced-motion: reduce) {
-        *,
-        *::before,
-        *::after {
-          animation-duration: 0.01ms !important;
-          animation-iteration-count: 1 !important;
-          transition-duration: 0.01ms !important;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <header class="topbar">
-      <a class="brand" href="/" aria-label="Ticketing OS home">
-        <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
-          <rect width="32" height="32" rx="7" fill="#15151a" stroke="#232329" />
-          <path
-            d="M8 11h16v4a2.2 2.2 0 0 0 0 4.4V21H8v-1.6a2.2 2.2 0 0 0 0-4.4V11z"
-            fill="none"
-            stroke="#f4f4f5"
-            stroke-width="1.7"
-          />
-          <path
-            d="M16 12.6v1.6m0 2.4v1.6m0 2.4v1.6"
-            stroke="#f4f4f5"
-            stroke-width="1.4"
-            stroke-linecap="round"
-          />
-        </svg>
-        <span class="brand-name">TICKETING<span class="brand-dim">/OS</span></span>
-      </a>
-      <div class="topbar-right">
-        <div class="status" id="streamStatus" data-state="connecting">
-          <span class="status-dot" aria-hidden="true"></span>
-          <span class="status-label" id="streamLabel">Connecting</span>
-        </div>
-        <span class="region-chip">us-central1</span>
-      </div>
-    </header>
-
-    <main>
-      <section class="hero">
-        <p class="eyebrow">Real-time revenue console</p>
-        <h1>Every seat, every sale, <em>live.</em></h1>
-        <p class="lede">
-          Orders flow through Pub/Sub, land in Postgres, and reach this
-          dashboard in seconds — delivered over Server-Sent Events, not
-          polling. Place an order below and watch it clear the pipeline.
-        </p>
-        <div class="hero-meta">
-          <span class="hero-meta-item"
-            >Last update <span id="lastUpdated">&mdash;</span></span
-          >
-          <span class="hero-meta-item"
-            >Transport <span id="transportLabel">SSE</span></span
-          >
-          <span class="hero-meta-item">Region <span>us-central1</span></span>
-        </div>
-      </section>
-
-      <section class="kpis" aria-label="Key metrics">
-        <div class="kpi">
-          <div class="kpi-label">Total orders</div>
-          <div class="kpi-value" id="totalOrders">&mdash;</div>
-          <div class="kpi-sub">all time</div>
-        </div>
-        <div class="kpi">
-          <div class="kpi-label">Tickets sold</div>
-          <div class="kpi-value" id="totalTickets">&mdash;</div>
-          <div class="kpi-sub">across all events</div>
-        </div>
-        <div class="kpi">
-          <div class="kpi-label">Gross revenue</div>
-          <div class="kpi-value" id="totalRevenue">&mdash;</div>
-          <div class="kpi-sub">settled orders</div>
-        </div>
-        <div class="kpi">
-          <div class="kpi-label">Orders / min</div>
-          <div class="kpi-value" id="ordersPerMinute">&mdash;</div>
-          <div class="kpi-sub">rolling rate</div>
-        </div>
-        <div class="kpi">
-          <div class="kpi-label">Uptime</div>
-          <div class="kpi-value" id="uptime">&mdash;</div>
-          <div class="kpi-sub">analytics service</div>
-        </div>
-      </section>
-
-      <section class="split">
-        <div class="card">
-          <div class="card-head">
-            <h2 class="card-title">New order</h2>
-            <span class="chip">POST /order</span>
-          </div>
-          <form id="orderForm" novalidate>
-            <div class="field">
-              <label class="field-label" for="eventType">Event</label>
-              <select class="select" id="eventType" required>
-                <option value="">Select an event</option>
-              </select>
-            </div>
-            <div class="field-row">
-              <div class="field">
-                <label class="field-label" for="customerName">Customer</label>
-                <input
-                  class="input"
-                  type="text"
-                  id="customerName"
-                  placeholder="Full name"
-                  required
-                  minlength="2"
-                  autocomplete="name"
-                />
-              </div>
-              <div class="field">
-                <span class="field-label" id="qtyLabel">Tickets</span>
-                <div class="stepper" role="group" aria-labelledby="qtyLabel">
-                  <button type="button" id="qtyMinus" aria-label="Decrease quantity">
-                    &minus;
-                  </button>
-                  <input
-                    type="number"
-                    id="quantity"
-                    value="1"
-                    min="1"
-                    max="10"
-                    required
-                    aria-label="Number of tickets"
-                  />
-                  <button type="button" id="qtyPlus" aria-label="Increase quantity">
-                    +
-                  </button>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="theme-color" content="#141417" />
+        <meta
+            name="description"
+            content="Real-time event ticket revenue console. Orders stream through Pub/Sub and land here in seconds."
+        />
+        <title>Ticketing OS — Live Event Revenue</title>
+        <link
+            rel="icon"
+            href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231c1c21'/%3E%3Cpath d='M8 11h16v4a2.2 2.2 0 0 0 0 4.4V21H8v-1.6a2.2 2.2 0 0 0 0-4.4V11z' fill='none' stroke='%23f4f4f5' stroke-width='1.7'/%3E%3Cpath d='M16 12.6v1.6m0 2.4v1.6m0 2.4v1.6' stroke='%23f4f4f5' stroke-width='1.4'/%3E%3C/svg%3E"
+        />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap"
+            rel="stylesheet"
+        />
+        <style>
+            :root {
+                --bg: #141417;
+                --panel: #1c1c21;
+                --panel-2: #232329;
+                --line: #2d2d35;
+                --line-soft: #24242b;
+                --text: #f4f4f5;
+                --muted: #9a9aa3;
+                --faint: #64646e;
+                --ok: #4ade80;
+                --warn: #fbbf24;
+                --err: #f87171;
+                --sans: "Inter", -apple-system, "Segoe UI", sans-serif;
+                --serif: "Instrument Serif", Georgia, serif;
+                --mono:
+                    "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+                --ease: cubic-bezier(0.22, 1, 0.36, 1);
+            }
+
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+
+            html {
+                scroll-behavior: smooth;
+            }
+
+            body {
+                font-family: var(--sans);
+                background: var(--bg);
+                color: var(--text);
+                min-height: 100vh;
+                font-size: 15px;
+                line-height: 1.5;
+                -webkit-font-smoothing: antialiased;
+                text-rendering: optimizeLegibility;
+            }
+
+            body::before {
+                content: "";
+                position: fixed;
+                inset: 0;
+                pointer-events: none;
+                background:
+                    radial-gradient(
+                        700px 340px at 12% -6%,
+                        rgba(255, 255, 255, 0.05),
+                        transparent 70%
+                    ),
+                    radial-gradient(
+                        500px 300px at 90% 0%,
+                        rgba(120, 130, 255, 0.05),
+                        transparent 70%
+                    );
+                z-index: 0;
+            }
+
+            ::selection {
+                background: #e4e4e7;
+                color: #141417;
+            }
+
+            ::-webkit-scrollbar {
+                width: 10px;
+                height: 10px;
+            }
+            ::-webkit-scrollbar-track {
+                background: var(--bg);
+            }
+            ::-webkit-scrollbar-thumb {
+                background: #34343d;
+                border-radius: 6px;
+                border: 2px solid var(--bg);
+            }
+
+            .mono {
+                font-family: var(--mono);
+            }
+
+            button {
+                font-family: inherit;
+            }
+
+            :focus-visible {
+                outline: 2px solid #e4e4e7;
+                outline-offset: 2px;
+            }
+
+            /* ============ Top bar ============ */
+            .topbar {
+                position: sticky;
+                top: 0;
+                z-index: 50;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                height: 60px;
+                padding: 0 clamp(16px, 4vw, 48px);
+                background: rgba(20, 20, 23, 0.78);
+                backdrop-filter: blur(14px);
+                -webkit-backdrop-filter: blur(14px);
+                border-bottom: 1px solid var(--line-soft);
+            }
+
+            .brand {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                text-decoration: none;
+                color: var(--text);
+            }
+
+            .brand svg {
+                display: block;
+            }
+
+            .brand-name {
+                font-family: var(--mono);
+                font-size: 13px;
+                font-weight: 500;
+                letter-spacing: 0.14em;
+            }
+
+            .brand-dim {
+                color: var(--faint);
+            }
+
+            .topbar-right {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+
+            .status {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 6px 12px;
+                border: 1px solid var(--line);
+                border-radius: 999px;
+                background: var(--panel);
+            }
+
+            .status-dot {
+                width: 7px;
+                height: 7px;
+                border-radius: 50%;
+                background: var(--warn);
+                flex-shrink: 0;
+            }
+
+            .status[data-state="live"] .status-dot {
+                background: var(--ok);
+                animation: pulse 2s ease-out infinite;
+            }
+
+            .status[data-state="reconnecting"] .status-dot {
+                background: var(--warn);
+                animation: pulse 1.2s ease-out infinite;
+            }
+
+            .status[data-state="polling"] .status-dot {
+                background: var(--muted);
+            }
+
+            .status-label {
+                font-family: var(--mono);
+                font-size: 10.5px;
+                font-weight: 500;
+                letter-spacing: 0.12em;
+                text-transform: uppercase;
+                color: var(--muted);
+                white-space: nowrap;
+            }
+
+            .region-chip {
+                font-family: var(--mono);
+                font-size: 10.5px;
+                letter-spacing: 0.1em;
+                color: var(--faint);
+                padding: 6px 12px;
+                border: 1px solid var(--line-soft);
+                border-radius: 999px;
+                white-space: nowrap;
+            }
+
+            /* ============ Layout ============ */
+            main {
+                position: relative;
+                z-index: 1;
+                max-width: 1160px;
+                margin: 0 auto;
+                padding: 0 clamp(16px, 4vw, 48px) 80px;
+            }
+
+            .hero {
+                padding: clamp(48px, 8vw, 96px) 0 clamp(32px, 5vw, 56px);
+            }
+
+            .eyebrow {
+                font-family: var(--mono);
+                font-size: 11px;
+                letter-spacing: 0.2em;
+                text-transform: uppercase;
+                color: var(--faint);
+                margin-bottom: 22px;
+                animation: rise 0.7s var(--ease) both;
+            }
+
+            .hero h1 {
+                font-family: var(--serif);
+                font-weight: 400;
+                font-size: clamp(44px, 7.5vw, 84px);
+                line-height: 1;
+                letter-spacing: -0.015em;
+                max-width: 14ch;
+                animation: rise 0.7s var(--ease) 0.07s both;
+            }
+
+            .hero h1 em {
+                font-style: italic;
+                color: var(--ok);
+            }
+
+            .lede {
+                margin-top: 24px;
+                max-width: 560px;
+                color: var(--muted);
+                font-size: 16px;
+                line-height: 1.65;
+                animation: rise 0.7s var(--ease) 0.14s both;
+            }
+
+            .hero-meta {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 24px;
+                margin-top: 30px;
+                animation: rise 0.7s var(--ease) 0.21s both;
+            }
+
+            .hero-meta-item {
+                font-family: var(--mono);
+                font-size: 11px;
+                letter-spacing: 0.1em;
+                text-transform: uppercase;
+                color: var(--faint);
+            }
+
+            .hero-meta-item span {
+                color: var(--muted);
+            }
+
+            /* ============ KPI strip ============ */
+            .kpis {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+                gap: 12px;
+                margin-bottom: 16px;
+            }
+
+            .kpi {
+                background: var(--panel);
+                border: 1px solid var(--line);
+                border-radius: 14px;
+                padding: 20px;
+                transition:
+                    transform 0.35s var(--ease),
+                    border-color 0.35s var(--ease);
+                animation: rise 0.6s var(--ease) both;
+            }
+
+            .kpi:nth-child(1) {
+                animation-delay: 0.1s;
+            }
+            .kpi:nth-child(2) {
+                animation-delay: 0.16s;
+            }
+            .kpi:nth-child(3) {
+                animation-delay: 0.22s;
+            }
+            .kpi:nth-child(4) {
+                animation-delay: 0.28s;
+            }
+            .kpi:nth-child(5) {
+                animation-delay: 0.34s;
+            }
+
+            .kpi:hover {
+                transform: translateY(-3px);
+                border-color: #3b3b45;
+            }
+
+            .kpi-label {
+                font-family: var(--mono);
+                font-size: 10px;
+                letter-spacing: 0.16em;
+                text-transform: uppercase;
+                color: var(--faint);
+            }
+
+            .kpi-value {
+                margin-top: 12px;
+                font-size: clamp(26px, 2.6vw, 34px);
+                font-weight: 600;
+                letter-spacing: -0.02em;
+                font-variant-numeric: tabular-nums;
+                line-height: 1.1;
+            }
+
+            .kpi-sub {
+                margin-top: 6px;
+                font-size: 12px;
+                color: var(--faint);
+            }
+
+            /* ============ Cards ============ */
+            .split {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 16px;
+                margin-bottom: 16px;
+            }
+
+            .card {
+                background: var(--panel);
+                border: 1px solid var(--line);
+                border-radius: 16px;
+                padding: clamp(20px, 3vw, 28px);
+                animation: rise 0.65s var(--ease) 0.3s both;
+            }
+
+            .card-head {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                margin-bottom: 24px;
+            }
+
+            .card-title {
+                font-size: 15px;
+                font-weight: 600;
+                letter-spacing: -0.01em;
+            }
+
+            .chip {
+                font-family: var(--mono);
+                font-size: 9.5px;
+                letter-spacing: 0.14em;
+                text-transform: uppercase;
+                color: var(--faint);
+                border: 1px solid var(--line);
+                padding: 4px 8px;
+                border-radius: 6px;
+                white-space: nowrap;
+            }
+
+            /* ============ Form ============ */
+            .field {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                margin-bottom: 18px;
+            }
+
+            .field-label {
+                font-family: var(--mono);
+                font-size: 10px;
+                letter-spacing: 0.16em;
+                text-transform: uppercase;
+                color: var(--faint);
+            }
+
+            .field-row {
+                display: grid;
+                grid-template-columns: 1fr auto;
+                gap: 14px;
+            }
+
+            .input,
+            .select {
+                height: 46px;
+                background: var(--panel-2);
+                border: 1px solid var(--line);
+                border-radius: 10px;
+                color: var(--text);
+                font-family: var(--sans);
+                font-size: 14.5px;
+                padding: 0 14px;
+                width: 100%;
+                transition:
+                    border-color 0.2s,
+                    box-shadow 0.2s;
+            }
+
+            .input::placeholder {
+                color: var(--faint);
+            }
+
+            .input:focus,
+            .select:focus {
+                outline: none;
+                border-color: #3d3d46;
+                box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.06);
+            }
+
+            .select {
+                appearance: none;
+                -webkit-appearance: none;
+                cursor: pointer;
+                background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%2393939c' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+                background-repeat: no-repeat;
+                background-position: right 14px center;
+                padding-right: 38px;
+            }
+
+            .stepper {
+                display: flex;
+                align-items: stretch;
+                border: 1px solid var(--line);
+                border-radius: 10px;
+                background: var(--panel-2);
+                overflow: hidden;
+                height: 46px;
+            }
+
+            .stepper button {
+                width: 44px;
+                background: transparent;
+                border: none;
+                color: var(--muted);
+                font-size: 17px;
+                cursor: pointer;
+                transition:
+                    background 0.2s,
+                    color 0.2s;
+            }
+
+            .stepper button:hover {
+                background: rgba(255, 255, 255, 0.05);
+                color: var(--text);
+            }
+
+            .stepper input {
+                width: 54px;
+                background: transparent;
+                border: none;
+                border-left: 1px solid var(--line);
+                border-right: 1px solid var(--line);
+                color: var(--text);
+                font-family: var(--mono);
+                font-size: 15px;
+                text-align: center;
+                -moz-appearance: textfield;
+                appearance: textfield;
+            }
+
+            .stepper input::-webkit-outer-spin-button,
+            .stepper input::-webkit-inner-spin-button {
+                -webkit-appearance: none;
+                margin: 0;
+            }
+
+            .stepper input:focus {
+                outline: none;
+            }
+
+            .submit-btn {
+                width: 100%;
+                height: 50px;
+                margin-top: 4px;
+                background: #059669;
+                color: #ffffff;
+                border: none;
+                border-radius: 10px;
+                font-size: 14px;
+                font-weight: 600;
+                letter-spacing: 0.01em;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 10px;
+                transition:
+                    transform 0.25s var(--ease),
+                    background 0.2s,
+                    opacity 0.2s;
+            }
+
+            .submit-btn:hover:not(:disabled) {
+                background: #0aa875;
+                transform: translateY(-1px);
+            }
+
+            .submit-btn:active:not(:disabled) {
+                transform: translateY(0);
+            }
+
+            .submit-btn:disabled {
+                opacity: 0.55;
+                cursor: not-allowed;
+            }
+
+            .spinner {
+                width: 14px;
+                height: 14px;
+                border: 2px solid rgba(255, 255, 255, 0.3);
+                border-top-color: #ffffff;
+                border-radius: 50%;
+                animation: spin 0.7s linear infinite;
+            }
+
+            .form-footnote {
+                margin-top: 14px;
+                font-family: var(--mono);
+                font-size: 10.5px;
+                letter-spacing: 0.06em;
+                color: var(--faint);
+                text-align: center;
+            }
+
+            /* ============ Demand bars ============ */
+            .event-row {
+                padding: 15px 0;
+                border-top: 1px solid var(--line-soft);
+            }
+
+            .event-row:first-child {
+                border-top: none;
+                padding-top: 2px;
+            }
+
+            .event-head {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+
+            .badge {
+                font-family: var(--mono);
+                font-size: 10px;
+                font-weight: 500;
+                letter-spacing: 0.08em;
+                color: var(--muted);
+                border: 1px solid var(--line);
+                background: var(--panel-2);
+                border-radius: 6px;
+                padding: 3px 7px;
+                flex-shrink: 0;
+            }
+
+            .event-name {
+                font-size: 13.5px;
+                font-weight: 500;
+                text-transform: capitalize;
+            }
+
+            .event-pct {
+                margin-left: auto;
+                font-family: var(--mono);
+                font-size: 13px;
+                font-variant-numeric: tabular-nums;
+                color: var(--text);
+            }
+
+            .event-bar {
+                height: 6px;
+                background: #141417;
+                border-radius: 999px;
+                overflow: hidden;
+                margin-top: 11px;
+            }
+
+            .event-bar-fill {
+                height: 100%;
+                border-radius: 999px;
+                background: linear-gradient(90deg, #059669, #4ade80);
+                width: 0;
+                transition: width 0.7s var(--ease);
+            }
+
+            .event-meta {
+                display: flex;
+                gap: 18px;
+                margin-top: 9px;
+                font-family: var(--mono);
+                font-size: 11px;
+                color: var(--faint);
+                font-variant-numeric: tabular-nums;
+            }
+
+            .empty-state {
+                border: 1px dashed var(--line);
+                border-radius: 10px;
+                padding: 32px 20px;
+                text-align: center;
+                color: var(--faint);
+                font-size: 13.5px;
+            }
+
+            /* ============ Orders table ============ */
+            .table-wrap {
+                overflow-x: auto;
+                margin: 0 -4px;
+            }
+
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                min-width: 560px;
+            }
+
+            th {
+                font-family: var(--mono);
+                font-size: 9.5px;
+                font-weight: 500;
+                letter-spacing: 0.16em;
+                text-transform: uppercase;
+                color: var(--faint);
+                text-align: left;
+                padding: 10px 12px;
+                border-bottom: 1px solid var(--line);
+            }
+
+            td {
+                padding: 13px 12px;
+                font-size: 14px;
+                border-bottom: 1px solid var(--line-soft);
+                vertical-align: middle;
+            }
+
+            tbody tr {
+                transition: background 0.2s;
+                animation: rowIn 0.45s var(--ease) both;
+            }
+
+            tbody tr:hover {
+                background: rgba(255, 255, 255, 0.02);
+            }
+
+            tbody tr:last-child td {
+                border-bottom: none;
+            }
+
+            .cell-order {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                white-space: nowrap;
+            }
+
+            .oid {
+                font-family: var(--mono);
+                font-size: 12px;
+                color: var(--faint);
+                font-variant-numeric: tabular-nums;
+            }
+
+            .cell-qty {
+                font-family: var(--mono);
+                font-size: 13px;
+                font-variant-numeric: tabular-nums;
+            }
+
+            .cell-time {
+                font-family: var(--mono);
+                font-size: 12px;
+                color: var(--faint);
+                white-space: nowrap;
+            }
+
+            .pill {
+                display: inline-flex;
+                align-items: center;
+                gap: 7px;
+                font-family: var(--mono);
+                font-size: 10px;
+                letter-spacing: 0.1em;
+                text-transform: uppercase;
+                padding: 4px 9px;
+                border-radius: 999px;
+                border: 1px solid var(--line);
+                color: var(--muted);
+                white-space: nowrap;
+            }
+
+            .pill::before {
+                content: "";
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                background: currentColor;
+            }
+
+            .pill[data-status="fulfilled"] {
+                color: var(--ok);
+                border-color: rgba(74, 222, 128, 0.25);
+                background: rgba(74, 222, 128, 0.06);
+            }
+
+            .pill[data-status="pending"] {
+                color: var(--warn);
+                border-color: rgba(251, 191, 36, 0.25);
+                background: rgba(251, 191, 36, 0.06);
+            }
+
+            /* ============ Toast ============ */
+            .toast {
+                position: fixed;
+                bottom: 24px;
+                right: 24px;
+                z-index: 100;
+                width: min(380px, calc(100vw - 32px));
+                background: var(--panel-2);
+                border: 1px solid var(--line);
+                border-radius: 14px;
+                padding: 16px;
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+                display: flex;
+                gap: 13px;
+                opacity: 0;
+                transform: translateY(14px);
+                pointer-events: none;
+                transition:
+                    opacity 0.35s var(--ease),
+                    transform 0.35s var(--ease);
+                overflow: hidden;
+            }
+
+            .toast.show {
+                opacity: 1;
+                transform: translateY(0);
+                pointer-events: auto;
+            }
+
+            .toast-icon {
+                width: 30px;
+                height: 30px;
+                border-radius: 50%;
+                flex-shrink: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .toast[data-type="success"] .toast-icon {
+                background: rgba(74, 222, 128, 0.12);
+                color: var(--ok);
+            }
+
+            .toast[data-type="error"] .toast-icon {
+                background: rgba(248, 113, 113, 0.12);
+                color: var(--err);
+            }
+
+            .toast-body {
+                flex: 1;
+                min-width: 0;
+            }
+
+            .toast-title {
+                font-size: 13.5px;
+                font-weight: 600;
+                margin-bottom: 3px;
+            }
+
+            .toast-message {
+                font-size: 13px;
+                color: var(--muted);
+                line-height: 1.5;
+            }
+
+            .toast-close {
+                background: none;
+                border: none;
+                color: var(--faint);
+                font-size: 18px;
+                line-height: 1;
+                cursor: pointer;
+                padding: 0;
+                height: 20px;
+                transition: color 0.2s;
+            }
+
+            .toast-close:hover {
+                color: var(--text);
+            }
+
+            .toast-progress {
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                height: 2px;
+                width: 100%;
+                background: var(--ok);
+                opacity: 0.5;
+                transform-origin: left;
+                transform: scaleX(0);
+            }
+
+            .toast.show .toast-progress {
+                animation: shrink 5s linear forwards;
+            }
+
+            /* ============ Footer ============ */
+            footer {
+                position: relative;
+                z-index: 1;
+                border-top: 1px solid var(--line-soft);
+                padding: 26px clamp(16px, 4vw, 48px);
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                justify-content: space-between;
+                gap: 14px;
+            }
+
+            .pipeline {
+                font-family: var(--mono);
+                font-size: 10.5px;
+                letter-spacing: 0.08em;
+                color: var(--faint);
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                align-items: center;
+            }
+
+            .pipeline .node {
+                color: var(--muted);
+            }
+
+            .pipeline .arrow {
+                color: #33333b;
+            }
+
+            .footer-note {
+                font-family: var(--mono);
+                font-size: 10.5px;
+                letter-spacing: 0.08em;
+                color: var(--faint);
+            }
+
+            /* ============ Animations ============ */
+            @keyframes rise {
+                from {
+                    opacity: 0;
+                    transform: translateY(18px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+
+            @keyframes rowIn {
+                from {
+                    opacity: 0;
+                    transform: translateY(-6px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+
+            @keyframes pulse {
+                0% {
+                    box-shadow: 0 0 0 0 currentColor;
+                    opacity: 1;
+                }
+                100% {
+                    box-shadow: 0 0 0 7px transparent;
+                    opacity: 0.85;
+                }
+            }
+
+            @keyframes spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+
+            @keyframes shrink {
+                to {
+                    transform: scaleX(0);
+                }
+            }
+
+            /* ============ Responsive ============ */
+            @media (max-width: 960px) {
+                .split {
+                    grid-template-columns: 1fr;
+                }
+            }
+
+            @media (max-width: 640px) {
+                .region-chip {
+                    display: none;
+                }
+                .hero h1 {
+                    max-width: none;
+                }
+                .field-row {
+                    grid-template-columns: 1fr;
+                }
+                .stepper {
+                    width: 100%;
+                }
+                .stepper input {
+                    flex: 1;
+                }
+                footer {
+                    flex-direction: column;
+                    align-items: flex-start;
+                }
+            }
+
+            @media (prefers-reduced-motion: reduce) {
+                *,
+                *::before,
+                *::after {
+                    animation-duration: 0.01ms !important;
+                    animation-iteration-count: 1 !important;
+                    transition-duration: 0.01ms !important;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <header class="topbar">
+            <a class="brand" href="/" aria-label="Ticketing OS home">
+                <svg
+                    width="24"
+                    height="24"
+                    viewBox="0 0 32 32"
+                    aria-hidden="true"
+                >
+                    <rect
+                        width="32"
+                        height="32"
+                        rx="7"
+                        fill="#232329"
+                        stroke="#2d2d35"
+                    />
+                    <path
+                        d="M8 11h16v4a2.2 2.2 0 0 0 0 4.4V21H8v-1.6a2.2 2.2 0 0 0 0-4.4V11z"
+                        fill="none"
+                        stroke="#f4f4f5"
+                        stroke-width="1.7"
+                    />
+                    <path
+                        d="M16 12.6v1.6m0 2.4v1.6m0 2.4v1.6"
+                        stroke="#f4f4f5"
+                        stroke-width="1.4"
+                        stroke-linecap="round"
+                    />
+                </svg>
+                <span class="brand-name"
+                    >EVENT-TICKETING<span class="brand-dim">/OS</span></span
+                >
+            </a>
+            <div class="topbar-right">
+                <div class="status" id="streamStatus" data-state="connecting">
+                    <span class="status-dot" aria-hidden="true"></span>
+                    <span class="status-label" id="streamLabel"
+                        >Connecting</span
+                    >
                 </div>
-              </div>
+                <span class="region-chip">us-central1</span>
             </div>
-            <button class="submit-btn" type="submit" id="orderButton">
-              <span id="orderButtonText">Place order</span>
-              <svg
-                id="orderButtonArrow"
-                width="15"
-                height="15"
-                viewBox="0 0 16 16"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="M2.5 8h11m0 0L9.5 4m4 4-4 4"
-                  stroke="currentColor"
-                  stroke-width="1.7"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
+        </header>
+
+        <main>
+            <section class="hero">
+                <p class="eyebrow">Now on sale</p>
+                <h1>Every seat, every sale, <em>live.</em></h1>
+                <p class="lede">
+                    Unlock instant access to the biggest live concerts,
+                    thrilling sports rivalries, blockbuster movie premieres, and
+                    high-stakes gaming tournaments without the hassle of endless
+                    queues. Don't let the best moments pass you by from your
+                    couch—grab your guaranteed tickets today before the hottest
+                    events completely sell out.
+                </p>
+                <div class="hero-meta">
+                    <span class="hero-meta-item"
+                        >Last update <span id="lastUpdated">&mdash;</span></span
+                    >
+                    <span class="hero-meta-item"
+                        >Transport <span id="transportLabel">SSE</span></span
+                    >
+                    <span class="hero-meta-item"
+                        >Region <span>us-central1</span></span
+                    >
+                </div>
+            </section>
+
+            <section class="kpis" aria-label="Key metrics">
+                <div class="kpi">
+                    <div class="kpi-label">Total orders</div>
+                    <div class="kpi-value" id="totalOrders">&mdash;</div>
+                    <div class="kpi-sub">all time</div>
+                </div>
+                <div class="kpi">
+                    <div class="kpi-label">Tickets sold</div>
+                    <div class="kpi-value" id="totalTickets">&mdash;</div>
+                    <div class="kpi-sub">across all events</div>
+                </div>
+                <div class="kpi">
+                    <div class="kpi-label">Gross revenue</div>
+                    <div class="kpi-value" id="totalRevenue">&mdash;</div>
+                    <div class="kpi-sub">settled orders</div>
+                </div>
+                <div class="kpi">
+                    <div class="kpi-label">Orders / min</div>
+                    <div class="kpi-value" id="ordersPerMinute">&mdash;</div>
+                    <div class="kpi-sub">rolling rate</div>
+                </div>
+                <div class="kpi">
+                    <div class="kpi-label">Uptime</div>
+                    <div class="kpi-value" id="uptime">&mdash;</div>
+                    <div class="kpi-sub">analytics service</div>
+                </div>
+            </section>
+
+            <section class="split">
+                <div class="card">
+                    <div class="card-head">
+                        <h2 class="card-title">New order</h2>
+                        <span class="chip">POST /order</span>
+                    </div>
+                    <form id="orderForm" novalidate>
+                        <div class="field">
+                            <label class="field-label" for="eventType"
+                                >Event</label
+                            >
+                            <select class="select" id="eventType" required>
+                                <option value="">Select an event</option>
+                            </select>
+                        </div>
+                        <div class="field-row">
+                            <div class="field">
+                                <label class="field-label" for="customerName"
+                                    >Customer</label
+                                >
+                                <input
+                                    class="input"
+                                    type="text"
+                                    id="customerName"
+                                    placeholder="Full name"
+                                    required
+                                    minlength="2"
+                                    autocomplete="name"
+                                />
+                            </div>
+                            <div class="field">
+                                <span class="field-label" id="qtyLabel"
+                                    >Tickets</span
+                                >
+                                <div
+                                    class="stepper"
+                                    role="group"
+                                    aria-labelledby="qtyLabel"
+                                >
+                                    <button
+                                        type="button"
+                                        id="qtyMinus"
+                                        aria-label="Decrease quantity"
+                                    >
+                                        &minus;
+                                    </button>
+                                    <input
+                                        type="number"
+                                        id="quantity"
+                                        value="1"
+                                        min="1"
+                                        max="10"
+                                        required
+                                        aria-label="Number of tickets"
+                                    />
+                                    <button
+                                        type="button"
+                                        id="qtyPlus"
+                                        aria-label="Increase quantity"
+                                    >
+                                        +
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <button
+                            class="submit-btn"
+                            type="submit"
+                            id="orderButton"
+                        >
+                            <span id="orderButtonText">Place order</span>
+                            <svg
+                                id="orderButtonArrow"
+                                width="15"
+                                height="15"
+                                viewBox="0 0 16 16"
+                                fill="none"
+                                aria-hidden="true"
+                            >
+                                <path
+                                    d="M2.5 8h11m0 0L9.5 4m4 4-4 4"
+                                    stroke="currentColor"
+                                    stroke-width="1.7"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                            </svg>
+                        </button>
+                        <p class="form-footnote">
+                            api &rarr; order-events &rarr; fulfillment &rarr;
+                            analytics
+                        </p>
+                    </form>
+                </div>
+
+                <div class="card">
+                    <div class="card-head">
+                        <h2 class="card-title">Demand by event</h2>
+                        <span class="chip">analytics</span>
+                    </div>
+                    <div id="eventStats">
+                        <div class="empty-state">
+                            Loading event breakdown&hellip;
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card">
+                <div class="card-head">
+                    <h2 class="card-title">Recent orders</h2>
+                    <span class="chip">Last 20</span>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Order</th>
+                                <th>Qty</th>
+                                <th>Customer</th>
+                                <th>Status</th>
+                                <th>Time</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recentOrders">
+                            <tr>
+                                <td colspan="5">
+                                    <div class="empty-state">
+                                        Waiting for the first order&hellip;
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <div class="pipeline" aria-label="Message pipeline">
+                <span class="node">api-service</span>
+                <span class="arrow">&rarr;</span>
+                <span class="node">order-events</span>
+                <span class="arrow">&rarr;</span>
+                <span class="node">fulfillment</span>
+                <span class="arrow">&rarr;</span>
+                <span class="node">analytics-events</span>
+                <span class="arrow">&rarr;</span>
+                <span class="node">analytics</span>
+                <span class="arrow">&rarr;</span>
+                <span class="node">postgres</span>
+            </div>
+            <div class="footer-note">
+                Cloud Run &middot; Pub/Sub &middot; Neon
+            </div>
+        </footer>
+
+        <div
+            class="toast"
+            id="notification"
+            data-type="success"
+            role="status"
+            aria-live="polite"
+        >
+            <div class="toast-icon" id="toastIcon" aria-hidden="true"></div>
+            <div class="toast-body">
+                <div class="toast-title" id="notificationTitle"></div>
+                <div class="toast-message" id="notificationMessage"></div>
+            </div>
+            <button
+                class="toast-close"
+                id="notificationClose"
+                aria-label="Dismiss notification"
+            >
+                &times;
             </button>
-            <p class="form-footnote">
-              api &rarr; order-events &rarr; fulfillment &rarr; analytics
-            </p>
-          </form>
+            <div class="toast-progress" aria-hidden="true"></div>
         </div>
 
-        <div class="card">
-          <div class="card-head">
-            <h2 class="card-title">Demand by event</h2>
-            <span class="chip">analytics</span>
-          </div>
-          <div id="eventStats">
-            <div class="empty-state">Loading event breakdown&hellip;</div>
-          </div>
-        </div>
-      </section>
+        <script>
+            // ----- Endpoints -----
+            // Local dev vs cloud. Override with ?api= and ?analytics= query params,
+            // e.g. ?api=https://api-service-pllrhmt56q-uc.a.run.app
+            const queryParams = new URLSearchParams(window.location.search);
+            const isLocalhost = ["localhost", "127.0.0.1"].includes(
+                window.location.hostname,
+            );
+            const API_URL =
+                queryParams.get("api") ||
+                (isLocalhost
+                    ? "http://localhost:3000"
+                    : "https://api-service-pllrhmt56q-uc.a.run.app");
+            const ANALYTICS_URL =
+                queryParams.get("analytics") ||
+                (isLocalhost
+                    ? "http://localhost:4000"
+                    : "https://analytics-service-pllrhmt56q-uc.a.run.app");
 
-      <section class="card">
-        <div class="card-head">
-          <h2 class="card-title">Recent orders</h2>
-          <span class="chip">Last 20</span>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Order</th>
-                <th>Qty</th>
-                <th>Customer</th>
-                <th>Status</th>
-                <th>Time</th>
-              </tr>
-            </thead>
-            <tbody id="recentOrders">
-              <tr>
-                <td colspan="5">
-                  <div class="empty-state">Waiting for the first order&hellip;</div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </main>
+            const EVENT_CODES = {
+                movie: "MV",
+                game: "GM",
+                concert: "CN",
+                sports: "SP",
+            };
 
-    <footer>
-      <div class="pipeline" aria-label="Message pipeline">
-        <span class="node">api-service</span>
-        <span class="arrow">&rarr;</span>
-        <span class="node">order-events</span>
-        <span class="arrow">&rarr;</span>
-        <span class="node">fulfillment</span>
-        <span class="arrow">&rarr;</span>
-        <span class="node">analytics-events</span>
-        <span class="arrow">&rarr;</span>
-        <span class="node">analytics</span>
-        <span class="arrow">&rarr;</span>
-        <span class="node">postgres</span>
-      </div>
-      <div class="footer-note">Cloud Run &middot; Pub/Sub &middot; Neon</div>
-    </footer>
+            function codeFor(name) {
+                if (EVENT_CODES[name]) return EVENT_CODES[name];
+                return String(name || "")
+                    .slice(0, 2)
+                    .toUpperCase();
+            }
 
-    <div
-      class="toast"
-      id="notification"
-      data-type="success"
-      role="status"
-      aria-live="polite"
-    >
-      <div class="toast-icon" id="toastIcon" aria-hidden="true"></div>
-      <div class="toast-body">
-        <div class="toast-title" id="notificationTitle"></div>
-        <div class="toast-message" id="notificationMessage"></div>
-      </div>
-      <button
-        class="toast-close"
-        id="notificationClose"
-        aria-label="Dismiss notification"
-      >
-        &times;
-      </button>
-      <div class="toast-progress" aria-hidden="true"></div>
-    </div>
+            function escapeHtml(value) {
+                return String(value).replace(
+                    /[&<>"']/g,
+                    (c) =>
+                        ({
+                            "&": "&amp;",
+                            "<": "&lt;",
+                            ">": "&gt;",
+                            '"': "&quot;",
+                            "'": "&#39;",
+                        })[c],
+                );
+            }
 
-    <script>
-      // ----- Endpoints -----
-      // Local dev vs cloud. Override with ?api= and ?analytics= query params,
-      // e.g. ?api=https://api-service-pllrhmt56q-uc.a.run.app
-      const queryParams = new URLSearchParams(window.location.search);
-      const isLocalhost = ['localhost', '127.0.0.1'].includes(
-        window.location.hostname,
-      );
-      const API_URL =
-        queryParams.get('api') ||
-        (isLocalhost
-          ? 'http://localhost:3000'
-          : 'https://api-service-pllrhmt56q-uc.a.run.app');
-      const ANALYTICS_URL =
-        queryParams.get('analytics') ||
-        (isLocalhost
-          ? 'http://localhost:4000'
-          : 'https://analytics-service-pllrhmt56q-uc.a.run.app');
+            function relativeTime(iso) {
+                if (!iso) return "Pending";
+                const seconds = Math.max(
+                    0,
+                    Math.floor((Date.now() - new Date(iso).getTime()) / 1000),
+                );
+                if (seconds < 10) return "Just now";
+                if (seconds < 60) return seconds + "s ago";
+                if (seconds < 3600) return Math.floor(seconds / 60) + "m ago";
+                return Math.floor(seconds / 3600) + "h ago";
+            }
 
-      const EVENT_CODES = {
-        movie: 'MV',
-        game: 'GM',
-        concert: 'CN',
-        sports: 'SP',
-      };
+            // ----- Stream status pill -----
+            const STATUS_LABELS = {
+                connecting: "Connecting",
+                live: "Live stream",
+                reconnecting: "Reconnecting",
+                polling: "Polling 3s",
+            };
 
-      function codeFor(name) {
-        if (EVENT_CODES[name]) return EVENT_CODES[name];
-        return String(name || '')
-          .slice(0, 2)
-          .toUpperCase();
-      }
+            function setStreamState(state) {
+                const pill = document.getElementById("streamStatus");
+                pill.dataset.state = state;
+                document.getElementById("streamLabel").textContent =
+                    STATUS_LABELS[state] || state;
+                document.getElementById("transportLabel").textContent =
+                    state === "polling" ? "HTTP fallback" : "SSE";
+            }
 
-      function escapeHtml(value) {
-        return String(value).replace(
-          /[&<>"']/g,
-          (c) =>
-            ({
-              '&': '&amp;',
-              '<': '&lt;',
-              '>': '&gt;',
-              '"': '&quot;',
-              "'": '&#39;',
-            })[c],
-        );
-      }
+            // ----- Last-updated ticker -----
+            let lastRenderAt = null;
 
-      function relativeTime(iso) {
-        if (!iso) return 'Pending';
-        const seconds = Math.max(
-          0,
-          Math.floor((Date.now() - new Date(iso).getTime()) / 1000),
-        );
-        if (seconds < 10) return 'Just now';
-        if (seconds < 60) return seconds + 's ago';
-        if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
-        return Math.floor(seconds / 3600) + 'h ago';
-      }
+            setInterval(() => {
+                const el = document.getElementById("lastUpdated");
+                if (!el) return;
+                el.textContent = lastRenderAt
+                    ? relativeTime(lastRenderAt)
+                    : "\u2014";
+            }, 1000);
 
-      // ----- Stream status pill -----
-      const STATUS_LABELS = {
-        connecting: 'Connecting',
-        live: 'Live stream',
-        reconnecting: 'Reconnecting',
-        polling: 'Polling 3s',
-      };
-
-      function setStreamState(state) {
-        const pill = document.getElementById('streamStatus');
-        pill.dataset.state = state;
-        document.getElementById('streamLabel').textContent =
-          STATUS_LABELS[state] || state;
-        document.getElementById('transportLabel').textContent =
-          state === 'polling' ? 'HTTP fallback' : 'SSE';
-      }
-
-      // ----- Last-updated ticker -----
-      let lastRenderAt = null;
-
-      setInterval(() => {
-        const el = document.getElementById('lastUpdated');
-        if (!el) return;
-        el.textContent = lastRenderAt ? relativeTime(lastRenderAt) : '\u2014';
-      }, 1000);
-
-      // ----- Events dropdown -----
-      async function loadEventTypes() {
-        const select = document.getElementById('eventType');
-        try {
-          const response = await fetch(API_URL + '/events');
-          const data = await response.json();
-          select.innerHTML = '<option value="">Select an event</option>';
-          (data.events || []).forEach((event) => {
-            const option = document.createElement('option');
-            option.value = event;
-            option.textContent =
-              event.charAt(0).toUpperCase() + event.slice(1);
-            select.appendChild(option);
-          });
-        } catch (error) {
-          console.error('Error loading events:', error);
-          select.innerHTML = `
+            // ----- Events dropdown -----
+            async function loadEventTypes() {
+                const select = document.getElementById("eventType");
+                try {
+                    const response = await fetch(API_URL + "/events");
+                    const data = await response.json();
+                    select.innerHTML =
+                        '<option value="">Select an event</option>';
+                    (data.events || []).forEach((event) => {
+                        const option = document.createElement("option");
+                        option.value = event;
+                        option.textContent =
+                            event.charAt(0).toUpperCase() + event.slice(1);
+                        select.appendChild(option);
+                    });
+                } catch (error) {
+                    console.error("Error loading events:", error);
+                    select.innerHTML = `
             <option value="">Select an event</option>
             <option value="movie">Movie</option>
             <option value="game">Game</option>
             <option value="concert">Concert</option>
             <option value="sports">Sports</option>
           `;
-        }
-      }
+                }
+            }
 
-      // ----- Quantity stepper -----
-      function clampQuantity(value) {
-        return Math.min(10, Math.max(1, value));
-      }
+            // ----- Quantity stepper -----
+            function clampQuantity(value) {
+                return Math.min(10, Math.max(1, value));
+            }
 
-      document.getElementById('qtyMinus').addEventListener('click', () => {
-        const input = document.getElementById('quantity');
-        input.value = clampQuantity(parseInt(input.value || '1', 10) - 1);
-      });
+            document
+                .getElementById("qtyMinus")
+                .addEventListener("click", () => {
+                    const input = document.getElementById("quantity");
+                    input.value = clampQuantity(
+                        parseInt(input.value || "1", 10) - 1,
+                    );
+                });
 
-      document.getElementById('qtyPlus').addEventListener('click', () => {
-        const input = document.getElementById('quantity');
-        input.value = clampQuantity(parseInt(input.value || '1', 10) + 1);
-      });
+            document.getElementById("qtyPlus").addEventListener("click", () => {
+                const input = document.getElementById("quantity");
+                input.value = clampQuantity(
+                    parseInt(input.value || "1", 10) + 1,
+                );
+            });
 
-      document.getElementById('quantity').addEventListener('change', (e) => {
-        e.target.value = clampQuantity(parseInt(e.target.value || '1', 10));
-      });
+            document
+                .getElementById("quantity")
+                .addEventListener("change", (e) => {
+                    e.target.value = clampQuantity(
+                        parseInt(e.target.value || "1", 10),
+                    );
+                });
 
-      // ----- Toast -----
-      const ICONS = {
-        success:
-          '<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5 6.5 11.5 12.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-        error:
-          '<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 4v5m0 2.5v.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="8" cy="8" r="6.2" stroke="currentColor" stroke-width="1.5"/></svg>',
-      };
+            // ----- Toast -----
+            const ICONS = {
+                success:
+                    '<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5 6.5 11.5 12.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+                error: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 4v5m0 2.5v.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="8" cy="8" r="6.2" stroke="currentColor" stroke-width="1.5"/></svg>',
+            };
 
-      let toastTimer = null;
+            let toastTimer = null;
 
-      function showNotification(type, title, message) {
-        const toast = document.getElementById('notification');
-        toast.dataset.type = type;
-        document.getElementById('toastIcon').innerHTML = ICONS[type] || '';
-        document.getElementById('notificationTitle').textContent = title;
-        document.getElementById('notificationMessage').textContent = message;
+            function showNotification(type, title, message) {
+                const toast = document.getElementById("notification");
+                toast.dataset.type = type;
+                document.getElementById("toastIcon").innerHTML =
+                    ICONS[type] || "";
+                document.getElementById("notificationTitle").textContent =
+                    title;
+                document.getElementById("notificationMessage").textContent =
+                    message;
 
-        toast.classList.remove('show');
-        void toast.offsetWidth; // restart progress animation
-        toast.classList.add('show');
+                toast.classList.remove("show");
+                void toast.offsetWidth; // restart progress animation
+                toast.classList.add("show");
 
-        clearTimeout(toastTimer);
-        toastTimer = setTimeout(hideNotification, 5000);
-      }
+                clearTimeout(toastTimer);
+                toastTimer = setTimeout(hideNotification, 5000);
+            }
 
-      function hideNotification() {
-        document.getElementById('notification').classList.remove('show');
-      }
+            function hideNotification() {
+                document
+                    .getElementById("notification")
+                    .classList.remove("show");
+            }
 
-      document
-        .getElementById('notificationClose')
-        .addEventListener('click', hideNotification);
+            document
+                .getElementById("notificationClose")
+                .addEventListener("click", hideNotification);
 
-      // ----- Order submission -----
-      async function submitOrder(event) {
-        event.preventDefault();
+            // ----- Order submission -----
+            async function submitOrder(event) {
+                event.preventDefault();
 
-        const form = document.getElementById('orderForm');
-        const button = document.getElementById('orderButton');
-        const buttonText = document.getElementById('orderButtonText');
-        const buttonArrow = document.getElementById('orderButtonArrow');
-        const eventType = document.getElementById('eventType').value;
-        const customerName = document.getElementById('customerName').value.trim();
-        const quantity = clampQuantity(
-          parseInt(document.getElementById('quantity').value || '1', 10),
-        );
+                const form = document.getElementById("orderForm");
+                const button = document.getElementById("orderButton");
+                const buttonText = document.getElementById("orderButtonText");
+                const buttonArrow = document.getElementById("orderButtonArrow");
+                const eventType = document.getElementById("eventType").value;
+                const customerName = document
+                    .getElementById("customerName")
+                    .value.trim();
+                const quantity = clampQuantity(
+                    parseInt(
+                        document.getElementById("quantity").value || "1",
+                        10,
+                    ),
+                );
 
-        if (!eventType) {
-          showNotification('error', 'Event required', 'Select an event to continue.');
-          return;
-        }
-        if (customerName.length < 2) {
-          showNotification(
-            'error',
-            'Name required',
-            'Enter a customer name of at least 2 characters.',
-          );
-          return;
-        }
+                if (!eventType) {
+                    showNotification(
+                        "error",
+                        "Event required",
+                        "Select an event to continue.",
+                    );
+                    return;
+                }
+                if (customerName.length < 2) {
+                    showNotification(
+                        "error",
+                        "Name required",
+                        "Enter a customer name of at least 2 characters.",
+                    );
+                    return;
+                }
 
-        button.disabled = true;
-        buttonText.textContent = 'Processing';
-        buttonArrow.style.display = 'none';
-        const spinner = document.createElement('span');
-        spinner.className = 'spinner';
-        button.prepend(spinner);
+                button.disabled = true;
+                buttonText.textContent = "Processing";
+                buttonArrow.style.display = "none";
+                const spinner = document.createElement("span");
+                spinner.className = "spinner";
+                button.prepend(spinner);
 
-        try {
-          const response = await fetch(API_URL + '/order', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              event: eventType,
-              customer: customerName,
-              quantity: quantity,
-            }),
-          });
+                try {
+                    const response = await fetch(API_URL + "/order", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            event: eventType,
+                            customer: customerName,
+                            quantity: quantity,
+                        }),
+                    });
 
-          const data = await response.json();
+                    const data = await response.json();
 
-          if (response.ok) {
-            showNotification(
-              'success',
-              'Order #' + data.orderId + ' submitted',
-              quantity +
-                ' × ' +
-                eventType +
-                ' for ' +
-                customerName +
-                ' — awaiting fulfillment through the pipeline.',
-            );
-            form.reset();
-            document.getElementById('quantity').value = 1;
-            updateDashboard();
-          } else {
-            throw new Error(data.error || 'Failed to place order');
-          }
-        } catch (error) {
-          console.error('Order error:', error);
-          showNotification(
-            'error',
-            'Order failed',
-            'Could not place order: ' + error.message,
-          );
-        } finally {
-          spinner.remove();
-          button.disabled = false;
-          buttonText.textContent = 'Place order';
-          buttonArrow.style.display = '';
-        }
-      }
+                    if (response.ok) {
+                        showNotification(
+                            "success",
+                            "Order #" + data.orderId + " submitted",
+                            quantity +
+                                " × " +
+                                eventType +
+                                " for " +
+                                customerName +
+                                " — awaiting fulfillment through the pipeline.",
+                        );
+                        form.reset();
+                        document.getElementById("quantity").value = 1;
+                        updateDashboard();
+                    } else {
+                        throw new Error(data.error || "Failed to place order");
+                    }
+                } catch (error) {
+                    console.error("Order error:", error);
+                    showNotification(
+                        "error",
+                        "Order failed",
+                        "Could not place order: " + error.message,
+                    );
+                } finally {
+                    spinner.remove();
+                    button.disabled = false;
+                    buttonText.textContent = "Place order";
+                    buttonArrow.style.display = "";
+                }
+            }
 
-      document
-        .getElementById('orderForm')
-        .addEventListener('submit', submitOrder);
+            document
+                .getElementById("orderForm")
+                .addEventListener("submit", submitOrder);
 
-      // ----- Stats rendering -----
-      function renderStats(data) {
-        lastRenderAt = Date.now();
+            // ----- Stats rendering -----
+            function renderStats(data) {
+                lastRenderAt = Date.now();
 
-        document.getElementById('totalOrders').textContent =
-          data.summary.totalOrders;
-        document.getElementById('totalTickets').textContent =
-          data.summary.totalTickets;
-        document.getElementById('totalRevenue').textContent =
-          data.summary.totalRevenue;
-        document.getElementById('ordersPerMinute').textContent =
-          data.summary.ordersPerMinute;
-        document.getElementById('uptime').textContent = data.summary.uptime;
+                document.getElementById("totalOrders").textContent =
+                    data.summary.totalOrders;
+                document.getElementById("totalTickets").textContent =
+                    data.summary.totalTickets;
+                document.getElementById("totalRevenue").textContent =
+                    data.summary.totalRevenue;
+                document.getElementById("ordersPerMinute").textContent =
+                    data.summary.ordersPerMinute;
+                document.getElementById("uptime").textContent =
+                    data.summary.uptime;
 
-        const eventStats = document.getElementById('eventStats');
-        const events = (data.events || []).filter(
-          (event) => event.count > 0,
-        );
+                const eventStats = document.getElementById("eventStats");
+                const events = (data.events || []).filter(
+                    (event) => event.count > 0,
+                );
 
-        eventStats.innerHTML = events.length
-          ? events
-              .map((event) => {
-                const pct = event.percentage || 0;
-                return `
+                eventStats.innerHTML = events.length
+                    ? events
+                          .map((event) => {
+                              const pct = event.percentage || 0;
+                              return `
               <div class="event-row">
                 <div class="event-head">
                   <span class="badge">${escapeHtml(codeFor(event.event))}</span>
@@ -1444,22 +1539,22 @@
                   <span>${escapeHtml(event.revenue)}</span>
                 </div>
               </div>`;
-              })
-              .join('')
-          : '<div class="empty-state">No ticket sales yet — the breakdown appears with the first order.</div>';
+                          })
+                          .join("")
+                    : '<div class="empty-state">No ticket sales yet — the breakdown appears with the first order.</div>';
 
-        const recentOrders = document.getElementById('recentOrders');
-        const orders = data.recentOrders || [];
+                const recentOrders = document.getElementById("recentOrders");
+                const orders = data.recentOrders || [];
 
-        recentOrders.innerHTML = orders.length
-          ? orders
-              .map((order) => {
-                const fulfilled = Boolean(order.timestamp);
-                const timeText = relativeTime(order.timestamp);
-                const absolute = order.timestamp
-                  ? new Date(order.timestamp).toLocaleString()
-                  : 'Not yet fulfilled';
-                return `
+                recentOrders.innerHTML = orders.length
+                    ? orders
+                          .map((order) => {
+                              const fulfilled = Boolean(order.timestamp);
+                              const timeText = relativeTime(order.timestamp);
+                              const absolute = order.timestamp
+                                  ? new Date(order.timestamp).toLocaleString()
+                                  : "Not yet fulfilled";
+                              return `
               <tr>
                 <td>
                   <div class="cell-order">
@@ -1471,74 +1566,74 @@
                 <td class="cell-qty">${escapeHtml(order.quantity)}&times;</td>
                 <td>${escapeHtml(order.customer)}</td>
                 <td>
-                  <span class="pill" data-status="${fulfilled ? 'fulfilled' : 'pending'}">
-                    ${fulfilled ? 'Fulfilled' : 'Pending'}
+                  <span class="pill" data-status="${fulfilled ? "fulfilled" : "pending"}">
+                    ${fulfilled ? "Fulfilled" : "Pending"}
                   </span>
                 </td>
                 <td class="cell-time" title="${escapeHtml(absolute)}">${timeText}</td>
               </tr>`;
-              })
-              .join('')
-          : '<tr><td colspan="5"><div class="empty-state">No orders yet — place the first one above.</div></td></tr>';
-      }
+                          })
+                          .join("")
+                    : '<tr><td colspan="5"><div class="empty-state">No orders yet — place the first one above.</div></td></tr>';
+            }
 
-      async function updateDashboard() {
-        try {
-          const response = await fetch(ANALYTICS_URL + '/stats');
-          const data = await response.json();
-          renderStats(data);
-        } catch (error) {
-          console.error('Error fetching stats:', error);
-        }
-      }
+            async function updateDashboard() {
+                try {
+                    const response = await fetch(ANALYTICS_URL + "/stats");
+                    const data = await response.json();
+                    renderStats(data);
+                } catch (error) {
+                    console.error("Error fetching stats:", error);
+                }
+            }
 
-      // ----- Live stream (SSE with polling fallback) -----
-      let pollStarted = false;
+            // ----- Live stream (SSE with polling fallback) -----
+            let pollStarted = false;
 
-      function startPollingFallback() {
-        if (pollStarted) return;
-        pollStarted = true;
-        setStreamState('polling');
-        updateDashboard();
-        setInterval(updateDashboard, 3000);
-      }
+            function startPollingFallback() {
+                if (pollStarted) return;
+                pollStarted = true;
+                setStreamState("polling");
+                updateDashboard();
+                setInterval(updateDashboard, 3000);
+            }
 
-      function startStatsStream() {
-        if (typeof EventSource === 'undefined') {
-          startPollingFallback();
-          return;
-        }
+            function startStatsStream() {
+                if (typeof EventSource === "undefined") {
+                    startPollingFallback();
+                    return;
+                }
 
-        const source = new EventSource(ANALYTICS_URL + '/stats/stream');
+                const source = new EventSource(ANALYTICS_URL + "/stats/stream");
 
-        source.onopen = () => {
-          setStreamState('live');
-        };
+                source.onopen = () => {
+                    setStreamState("live");
+                };
 
-        source.addEventListener('stats', (event) => {
-          setStreamState('live');
-          try {
-            renderStats(JSON.parse(event.data));
-          } catch (error) {
-            console.error('Error parsing stats stream:', error);
-          }
-        });
+                source.addEventListener("stats", (event) => {
+                    setStreamState("live");
+                    try {
+                        renderStats(JSON.parse(event.data));
+                    } catch (error) {
+                        console.error("Error parsing stats stream:", error);
+                    }
+                });
 
-        source.onerror = () => {
-          // EventSource reconnects automatically on transient errors.
-          if (source.readyState === EventSource.CLOSED) {
-            source.close();
-            startPollingFallback();
-          } else {
-            setStreamState('reconnecting');
-          }
-        };
-      }
+                source.onerror = () => {
+                    // EventSource reconnects automatically on transient errors.
+                    if (source.readyState === EventSource.CLOSED) {
+                        source.close();
+                        startPollingFallback();
+                    } else {
+                        setStreamState("reconnecting");
+                    }
+                };
+            }
 
-      // ----- Initialize -----
-      loadEventTypes();
-      updateDashboard();
-      startStatsStream();
-    </script>
-  </body>
+            // ----- Initialize -----
+            loadEventTypes();
+            updateDashboard();
+            startStatsStream();
+        </script>
+    </body>
 </html>
