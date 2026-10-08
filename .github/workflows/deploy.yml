@@ -41,7 +41,7 @@ jobs:
       # === API Service ===
       - name: Build & Push API
         run: |
-          docker build -t ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/api:${{ github.sha }} ./services/api
+          docker build -f services/api/Dockerfile -t ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/api:${{ github.sha }} .
           docker push ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/api:${{ github.sha }}
 
       - name: Deploy API to Cloud Run
@@ -59,7 +59,7 @@ jobs:
       # === Fulfillment Service ===
       - name: Build & Push Fulfillment
         run: |
-          docker build -t ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/fulfillment:${{ github.sha }} ./services/fulfillment
+          docker build -f services/fulfillment/Dockerfile -t ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/fulfillment:${{ github.sha }} .
           docker push ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/fulfillment:${{ github.sha }}
 
       - name: Deploy Fulfillment to Cloud Run
@@ -75,7 +75,7 @@ jobs:
       # === Analytics Service ===
       - name: Build & Push Analytics
         run: |
-          docker build -t ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/analytics:${{ github.sha }} ./services/analytics
+          docker build -f services/analytics/Dockerfile -t ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/analytics:${{ github.sha }} .
           docker push ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/analytics:${{ github.sha }}
 
       - name: Deploy Analytics to Cloud Run

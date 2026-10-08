@@ -1,0 +1,10 @@
+.git
+.github
+.gitignore
+node_modules
+**/node_modules
+frontend
+plan.md
+README.md
+docker-compose.yml
+**/Dockerfile
