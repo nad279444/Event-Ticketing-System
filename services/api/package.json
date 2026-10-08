@@ -9,11 +9,11 @@
     "dev": "nodemon src/index.js"
   },
   "dependencies": {
-    "fastify": "^5.0.0",
-    "@fastify/env": "^5.0.0",
     "@fastify/cors": "^11.0.0",
-    "amqplib": "^0.10.4",
-    "dotenv": "^16.4.5"
+    "@google-cloud/pubsub": "^6.1.0",
+    "dotenv": "^16.4.5",
+    "fastify": "^5.0.0",
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"

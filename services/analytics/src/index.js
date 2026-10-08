@@ -1,106 +1,177 @@
-// analytics-service/index.js
-import { connectRabbit } from '../../../shared/rabbit/index.js';
+import 'dotenv/config';
 import fastify from 'fastify';
 import cors from '@fastify/cors';
+import { pool, initSchema } from '../../../shared/db/index.js';
+import { TOPICS, ensureMessaging } from '../../../shared/pubsub/index.js';
+import {
+  VALID_EVENTS,
+  PRICES,
+  decodePushBody,
+} from '../../../shared/common/index.js';
 
 const app = fastify({ logger: true });
-const { channel } = await connectRabbit();
-
-// Enable CORS for frontend access
-await app.register(cors, {
-  origin: '*',
-});
 const PORT = process.env.PORT || 4000;
-const eventStats = {
-  movie: 0,
-  game: 0,
-  concert: 0,
-  sports: 0,
-};
-
-const recentOrders = [];
-let totalTickets = 0;
-let totalRevenue = 0;
+const PUSH_ENDPOINT = process.env.PUSH_ENDPOINT;
 const startTime = new Date();
 
-// Ticket prices (for revenue calculation)
-const ticketPrices = {
-  movie: 15,
-  game: 50,
-  concert: 75,
-  sports: 60,
-};
+await app.register(cors, { origin: '*' });
+await initSchema();
 
-channel.consume('analytics', (msg) => {
-  if (!msg) return;
+try {
+  await ensureMessaging({
+    topics: [TOPICS.ANALYTICS_EVENTS],
+    pushSubscriptions: [
+      {
+        name: 'analytics-sub',
+        topic: TOPICS.ANALYTICS_EVENTS,
+        pushEndpoint: PUSH_ENDPOINT,
+      },
+    ],
+  });
+} catch (error) {
+  console.warn('⚠️  Pub/Sub setup failed:', error.message);
+}
 
-  const { id, event, customer, quantity, fulfilledAt } = JSON.parse(
-    msg.content.toString(),
+// Records a fulfilled order. Idempotent: redelivered messages just
+// re-mark the same row as fulfilled.
+async function recordFulfillment(order) {
+  const { id, event, customer, quantity, unitPrice, fulfilledAt } = order;
+
+  await pool.query(
+    `INSERT INTO orders (id, event_type, customer, quantity, unit_price, status, fulfilled_at)
+     VALUES ($1, $2, $3, $4, $5, 'fulfilled', $6)
+     ON CONFLICT (id) DO UPDATE
+       SET status = 'fulfilled', fulfilled_at = EXCLUDED.fulfilled_at`,
+    [
+      id,
+      event,
+      customer,
+      quantity,
+      unitPrice ?? PRICES[event] ?? 0,
+      fulfilledAt || new Date().toISOString(),
+    ],
   );
 
-  if (eventStats[event] !== undefined) {
-    eventStats[event] += quantity;
-  }
-
-  totalTickets += quantity;
-  totalRevenue += (ticketPrices[event] || 0) * quantity;
-
-  recentOrders.push({
-    id,
-    event,
-    customer,
-    quantity,
-    timestamp: fulfilledAt || new Date().toISOString(),
-  });
-
-  // Keep only last 100 orders
-  if (recentOrders.length > 100) {
-    recentOrders.shift();
-  }
-
   console.log(`📊 Analytics: ${quantity}x ${event} ticket(s) for ${customer}`);
-  channel.ack(msg);
-});
+}
 
-// API Endpoints
+// Pub/Sub push delivery handler. Returning 2xx acknowledges the message.
+async function handlePush(req, reply) {
+  const order = decodePushBody(req.body);
+  if (!order || order.id === undefined) {
+    return reply.code(400).send({ error: 'Invalid Pub/Sub push payload' });
+  }
+
+  try {
+    await recordFulfillment(order);
+    reply.send({ ok: true });
+  } catch (error) {
+    console.error('❌ Error recording fulfillment:', error);
+    reply.code(500).send({ error: 'Recording failed' });
+  }
+}
+
+app.post('/', handlePush);
+app.post('/push', handlePush);
+
 app.get('/stats', async (req, reply) => {
-  const total = Object.values(eventStats).reduce((a, b) => a + b, 0);
+  const [summaryResult, eventsResult, recentResult] = await Promise.all([
+    pool.query(
+      `SELECT COUNT(*)::int AS total_orders,
+              COALESCE(SUM(quantity), 0)::int AS total_tickets,
+              COALESCE(SUM(quantity * unit_price), 0)::int AS total_revenue,
+              MIN(created_at) AS first_order_at
+       FROM orders`,
+    ),
+    pool.query(
+      `SELECT event_type,
+              COUNT(*)::int AS orders,
+              COALESCE(SUM(quantity), 0)::int AS tickets,
+              COALESCE(SUM(quantity * unit_price), 0)::int AS revenue
+       FROM orders GROUP BY event_type`,
+    ),
+    pool.query(
+      `SELECT id, event_type AS event, customer, quantity,
+              fulfilled_at AS timestamp
+       FROM orders ORDER BY id DESC LIMIT 20`,
+    ),
+  ]);
+
+  const summary = summaryResult.rows[0];
+  const totalTickets = summary.total_tickets;
+  const firstOrderAt = summary.first_order_at
+    ? new Date(summary.first_order_at)
+    : null;
+
   const uptimeSeconds = Math.floor((new Date() - startTime) / 1000);
+  const ordersPerMinute = (() => {
+    if (!firstOrderAt || summary.total_orders === 0) return 0;
+    const elapsedMinutes = Math.max(
+      (Date.now() - firstOrderAt.getTime()) / 60000,
+      1 / 60, // avoid dividing by ~0 for very fresh data
+    );
+    return (summary.total_orders / elapsedMinutes).toFixed(2);
+  })();
+
+  const byEvent = Object.fromEntries(
+    eventsResult.rows.map((row) => [row.event_type, row]),
+  );
 
   return {
     summary: {
-      totalOrders: total,
+      totalOrders: summary.total_orders,
       totalTickets,
-      totalRevenue: `$${totalRevenue.toLocaleString()}`,
-      ordersPerMinute:
-        total > 0 ? ((total / uptimeSeconds) * 60).toFixed(2) : 0,
+      totalRevenue: `$${Number(summary.total_revenue).toLocaleString()}`,
+      ordersPerMinute,
       uptime: `${Math.floor(uptimeSeconds / 60)}m ${uptimeSeconds % 60}s`,
     },
-    events: Object.entries(eventStats)
-      .map(([event, count]) => ({
+    events: VALID_EVENTS.map((event) => {
+      const row = byEvent[event];
+      const tickets = row?.tickets ?? 0;
+      return {
         event,
-        count,
-        percentage: total ? Math.round((count / total) * 100) : 0,
-        revenue: `$${(ticketPrices[event] * count).toLocaleString()}`,
-      }))
-      .sort((a, b) => b.count - a.count), // Sort by popularity
-    recentOrders: recentOrders.slice(-20).reverse(),
+        count: tickets,
+        percentage: totalTickets
+          ? Math.round((tickets / totalTickets) * 100)
+          : 0,
+        revenue: `$${(row?.revenue ?? 0).toLocaleString()}`,
+      };
+    }).sort((a, b) => b.count - a.count),
+    recentOrders: recentResult.rows,
   };
 });
 
 app.get('/events/:eventType', async (req, reply) => {
   const eventType = req.params.eventType.toLowerCase();
-  if (!eventStats.hasOwnProperty(eventType)) {
+  if (!VALID_EVENTS.includes(eventType)) {
     return reply.code(404).send({ error: 'Event type not found' });
   }
 
-  const orders = recentOrders.filter((o) => o.event === eventType);
+  const [statsResult, recentResult] = await Promise.all([
+    pool.query(
+      `SELECT COUNT(*)::int AS orders,
+              COALESCE(SUM(quantity), 0)::int AS tickets,
+              COALESCE(SUM(quantity * unit_price), 0)::int AS revenue
+       FROM orders WHERE event_type = $1`,
+      [eventType],
+    ),
+    pool.query(
+      `SELECT id, event_type AS event, customer, quantity,
+              fulfilled_at AS timestamp
+       FROM orders WHERE event_type = $1 ORDER BY id DESC LIMIT 10`,
+      [eventType],
+    ),
+  ]);
+
+  const stats = statsResult.rows[0];
 
   return {
     event: eventType,
-    totalTickets: eventStats[eventType],
-    totalRevenue: `$${(ticketPrices[eventType] * eventStats[eventType]).toLocaleString()}`,
-    recentOrders: orders.slice(-10).reverse(),
+    totalOrders: stats.orders,
+    totalTickets: stats.tickets,
+    totalRevenue: `$${Number(stats.revenue).toLocaleString()}`,
+    price: PRICES[eventType],
+    recentOrders: recentResult.rows,
   };
 });
 
@@ -108,31 +179,42 @@ app.get('/health', async (req, reply) => {
   return { status: 'healthy', service: 'analytics' };
 });
 
-// Start API server
 await app.listen({ port: PORT, host: '0.0.0.0' });
 console.log(`📈 Analytics API running on port ${PORT}`);
+console.log(`📡 Consuming Pub/Sub topic: analytics-events (push)`);
 
-// Console logging
-setInterval(() => {
-  const total = Object.values(eventStats).reduce((a, b) => a + b, 0);
-  console.log('╔════════════════════════════════════╗');
-  console.log('║     EVENT TICKET ANALYTICS         ║');
-  console.log('╚════════════════════════════════════╝');
+// Console reporting
+setInterval(async () => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT event_type, COALESCE(SUM(quantity), 0)::int AS tickets,
+              COALESCE(SUM(quantity * unit_price), 0)::int AS revenue
+       FROM orders GROUP BY event_type ORDER BY tickets DESC`,
+    );
+    const totalTickets = rows.reduce((sum, r) => sum + r.tickets, 0);
+    const totalRevenue = rows.reduce((sum, r) => sum + r.revenue, 0);
 
-  Object.entries(eventStats)
-    .sort(([, a], [, b]) => b - a)
-    .forEach(([event, count]) => {
-      const percentage = total ? Math.floor((count / total) * 100) : 0;
+    console.log('╔════════════════════════════════════╗');
+    console.log('║     EVENT TICKET ANALYTICS         ║');
+    console.log('╚════════════════════════════════════╝');
+
+    rows.forEach(({ event_type, tickets }) => {
+      const percentage = totalTickets
+        ? Math.floor((tickets / totalTickets) * 100)
+        : 0;
       const icon = { movie: '🎬', game: '🎮', concert: '🎵', sports: '🏆' }[
-        event
+        event_type
       ];
       console.log(
-        `${icon} ${event.padEnd(10)}: ${percentage}% (${count} tickets)`,
+        `${icon} ${event_type.padEnd(10)}: ${percentage}% (${tickets} tickets)`,
       );
     });
 
-  console.log('────────────────────────────────────');
-  console.log(`💰 Total Revenue: $${totalRevenue.toLocaleString()}`);
-  console.log(`🎟️  Total Tickets: ${totalTickets}`);
-  console.log('════════════════════════════════════\n');
+    console.log('────────────────────────────────────');
+    console.log(`💰 Total Revenue: $${totalRevenue.toLocaleString()}`);
+    console.log(`🎟️  Total Tickets: ${totalTickets}`);
+    console.log('════════════════════════════════════\n');
+  } catch (error) {
+    console.error('Analytics report failed:', error.message);
+  }
 }, 10000);

@@ -372,8 +372,23 @@
     </div>
 
     <script>
-      const API_URL = 'https://api-service-onri.onrender.com';
-      const ANALYTICS_URL = 'https://analytics-service-logz.onrender.com';
+      // Local dev vs cloud. Override with ?api= and ?analytics= query params,
+      // e.g. ?api=https://api-service-xxxxx-uc.a.run.app
+      // TODO: update the production URLs after the first Cloud Run deploy.
+      const queryParams = new URLSearchParams(window.location.search);
+      const isLocalhost = ['localhost', '127.0.0.1'].includes(
+        window.location.hostname,
+      );
+      const API_URL =
+        queryParams.get('api') ||
+        (isLocalhost
+          ? 'http://localhost:3000'
+          : 'https://api-service-xxxxx-uc.a.run.app');
+      const ANALYTICS_URL =
+        queryParams.get('analytics') ||
+        (isLocalhost
+          ? 'http://localhost:4000'
+          : 'https://analytics-service-xxxxx-uc.a.run.app');
 
       const eventIcons = {
         movie: '🎬',

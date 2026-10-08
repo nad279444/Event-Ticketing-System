@@ -2,17 +2,18 @@
   "name": "order-analytics",
   "version": "1.0.0",
   "type": "module",
-  "description": "Analytics service - tracks and logs orders from queue",
+  "description": "Analytics service - tracks and serves order stats from Postgres",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js"
   },
   "dependencies": {
-    "amqplib": "^0.10.4",
+    "@fastify/cors": "^11.0.0",
+    "@google-cloud/pubsub": "^6.1.0",
     "dotenv": "^16.4.5",
     "fastify": "^5.0.0",
-    "@fastify/cors": "^11.0.0"
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"

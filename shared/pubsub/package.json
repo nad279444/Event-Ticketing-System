@@ -1,0 +1,9 @@
+{
+  "name": "pubsub-shared",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "dependencies": {
+    "@google-cloud/pubsub": "^6.1.0"
+  }
+}

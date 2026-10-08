@@ -1,9 +1,9 @@
 {
-  "name": "rabbit-shared",
+  "name": "db-shared",
   "version": "1.0.0",
   "type": "module",
   "main": "index.js",
   "dependencies": {
-    "amqplib": "^0.10.3"
+    "pg": "^8.23.1"
   }
 }

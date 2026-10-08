@@ -1,17 +1,20 @@
-FROM node:20-alpine
+FROM node:20-slim
 
 WORKDIR /app
 
 # Copy package files
 COPY services/analytics/package*.json ./services/analytics/
-COPY shared/rabbit/package*.json ./shared/rabbit/
+COPY shared/db/package*.json ./shared/db/
+COPY shared/pubsub/package*.json ./shared/pubsub/
 
-# Install dependencies for analytics
+# Install dependencies
 WORKDIR /app/services/analytics
 RUN npm install
 
-# Install dependencies for shared/rabbit
-WORKDIR /app/shared/rabbit
+WORKDIR /app/shared/db
+RUN npm install
+
+WORKDIR /app/shared/pubsub
 RUN npm install
 
 # Copy source code
@@ -22,12 +25,10 @@ COPY shared ./shared
 # Give node user ownership
 RUN chown -R node:node /app
 
-# Switch to node user
 USER node
 
-# Set working directory back to analytics
 WORKDIR /app/services/analytics
 
-EXPOSE 3000
+EXPOSE 4000
 
-CMD ["npm", "run", "dev"]
+CMD ["npm", "start"]

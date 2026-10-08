@@ -1,0 +1,93 @@
+name: event-ticketing
+
+services:
+  pubsub:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    container_name: pubsub-emulator
+    command: gcloud beta emulators pubsub start --host-port=0.0.0.0:8085 --project=local-dev
+    ports:
+      - '8085:8085'
+    healthcheck:
+      test: ['CMD-SHELL', 'bash -c "exec 3<>/dev/tcp/127.0.0.1/8085"']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: tickets
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d tickets']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    container_name: ticket-api
+    ports:
+      - '3000:3000'
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      PROJECT_ID: local-dev
+      PUBSUB_EMULATOR_HOST: pubsub:8085
+      DATABASE_URL: postgres://postgres:password@postgres:5432/tickets
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pubsub:
+        condition: service_healthy
+    command: npm run dev
+
+  fulfillment:
+    build:
+      context: .
+      dockerfile: services/fulfillment/Dockerfile
+    container_name: ticket-fulfillment
+    ports:
+      - '8081:8081'
+    environment:
+      NODE_ENV: development
+      PORT: 8081
+      PROJECT_ID: local-dev
+      PUBSUB_EMULATOR_HOST: pubsub:8085
+      PUSH_ENDPOINT: http://fulfillment:8081
+    depends_on:
+      pubsub:
+        condition: service_healthy
+    command: npm run dev
+
+  analytics:
+    build:
+      context: .
+      dockerfile: services/analytics/Dockerfile
+    container_name: ticket-analytics
+    ports:
+      - '4000:4000'
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      PROJECT_ID: local-dev
+      PUBSUB_EMULATOR_HOST: pubsub:8085
+      PUSH_ENDPOINT: http://analytics:4000
+      DATABASE_URL: postgres://postgres:password@postgres:5432/tickets
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pubsub:
+        condition: service_healthy
+    command: npm run dev
+
+volumes:
+  pgdata:

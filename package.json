@@ -1,0 +1,21 @@
+{
+  "name": "event-ticketing-system",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "shared/*",
+    "services/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w order-api",
+    "dev:fulfillment": "npm run dev -w order-fulfillment",
+    "dev:analytics": "npm run dev -w order-analytics",
+    "start:api": "npm run start -w order-api",
+    "start:fulfillment": "npm run start -w order-fulfillment",
+    "start:analytics": "npm run start -w order-analytics"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

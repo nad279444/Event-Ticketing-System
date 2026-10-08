@@ -1,17 +1,20 @@
-FROM node:20-alpine
+FROM node:20-slim
 
 WORKDIR /app
 
 # Copy package files
 COPY services/api/package*.json ./services/api/
-COPY shared/rabbit/package*.json ./shared/rabbit/
+COPY shared/pubsub/package*.json ./shared/pubsub/
+COPY shared/db/package*.json ./shared/db/
 
-# Install dependencies for API
+# Install dependencies
 WORKDIR /app/services/api
 RUN npm install
 
-# Install dependencies for shared/rabbit
-WORKDIR /app/shared/rabbit
+WORKDIR /app/shared/pubsub
+RUN npm install
+
+WORKDIR /app/shared/db
 RUN npm install
 
 # Copy source code
@@ -22,12 +25,10 @@ COPY shared ./shared
 # Give node user ownership
 RUN chown -R node:node /app
 
-# Switch to node user
 USER node
 
-# Set working directory back to api
 WORKDIR /app/services/api
 
 EXPOSE 3000
 
-CMD ["npm", "run", "dev"]
+CMD ["npm", "start"]

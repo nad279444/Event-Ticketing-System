@@ -1,17 +1,16 @@
-FROM node:20-alpine
+FROM node:20-slim
 
 WORKDIR /app
 
 # Copy package files
 COPY services/fulfillment/package*.json ./services/fulfillment/
-COPY shared/rabbit/package*.json ./shared/rabbit/
+COPY shared/pubsub/package*.json ./shared/pubsub/
 
-# Install dependencies for fulfillment
+# Install dependencies
 WORKDIR /app/services/fulfillment
 RUN npm install
 
-# Install dependencies for shared/rabbit
-WORKDIR /app/shared/rabbit
+WORKDIR /app/shared/pubsub
 RUN npm install
 
 # Copy source code
@@ -22,12 +21,10 @@ COPY shared ./shared
 # Give node user ownership
 RUN chown -R node:node /app
 
-# Switch to node user
 USER node
 
-# Set working directory back to fulfillment
 WORKDIR /app/services/fulfillment
 
-EXPOSE 3000
+EXPOSE 8081
 
-CMD ["npm", "run", "dev"]
+CMD ["npm", "start"]
